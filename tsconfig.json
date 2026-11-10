@@ -5,14 +5,8 @@
     "moduleResolution": "Bundler",
     "strict": true,
     "skipLibCheck": true,
-    "lib": [
-      "ESNext"
-    ],
-    "jsx": "react-jsx",
-    "jsxImportSource": "hono/jsx",
-    "types": [
-        "./worker-configuration.d.ts",
-        "node"
-    ]
-  },
+    "noEmit": true,
+    "lib": ["ESNext"],
+    "types": ["./worker-configuration.d.ts", "node"]
+  }
 }

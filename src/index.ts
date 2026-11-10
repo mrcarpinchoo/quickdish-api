@@ -1,9 +1,7 @@
-import { Hono } from "hono";
+import { Hono } from 'hono';
 
 const app = new Hono<{ Bindings: CloudflareBindings }>();
 
-app.get("/message", (c) => {
-  return c.text("Hello Hono!");
-});
+app.get('/health', (c) => c.json({ status: 'ok' }));
 
 export default app;
