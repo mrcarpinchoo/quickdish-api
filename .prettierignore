@@ -1,0 +1,10 @@
+pnpm-lock.yaml
+worker-configuration.d.ts
+skills-lock.json
+src/generated/
+.agents/
+.claude/
+.wrangler/
+coverage/
+reports/
+dist/

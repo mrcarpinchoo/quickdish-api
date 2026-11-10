@@ -23,11 +23,24 @@ The package manager is **pnpm**.
 ```bash
 pnpm install
 pnpm dev            # local server via wrangler dev (http://localhost:8787)
+pnpm build          # bundle into dist/ without deploying (wrangler deploy --dry-run)
 pnpm run deploy     # wrangler deploy --minify  (NOT `pnpm deploy`, a different built-in pnpm command)
 pnpm cf-typegen     # regenerate worker-configuration.d.ts from wrangler.jsonc
+pnpm typecheck      # tsc (noEmit)
+pnpm lint           # ESLint with type-aware typescript-eslint rules; lint:fix to auto-fix
+pnpm format         # Prettier write; format:check to only check
+pnpm test           # Vitest, run once; test:watch for watch mode
+pnpm test:ci        # Vitest with V8 coverage (coverage/) and JUnit report (reports/junit.xml)
+
+pnpm test test/health.test.ts      # run a single test file
+pnpm test -t "returns an ok status" # run tests whose name matches
 ```
 
-Lint, format, typecheck, test and build scripts are not set up yet. Check `package.json` for what exists before running anything.
+Before considering a change done, run `pnpm typecheck`, `pnpm lint`, `pnpm format:check` and `pnpm test`.
+
+Tests live in `test/` (`*.test.ts`) and run in Node, not the Workers runtime. Test routes with `app.request()`; mock Prisma instead of hitting D1.
+
+Code style comes from `.prettierrc`: double quotes, no trailing commas, `arrowParens: avoid`, 2-space indentation for code and config files.
 
 ## Architecture
 
@@ -35,7 +48,7 @@ Lint, format, typecheck, test and build scripts are not set up yet. Check `packa
 - Bindings (D1, secrets, vars) are declared in `wrangler.jsonc` and typed through the global `CloudflareBindings` interface in `worker-configuration.d.ts`, which is generated. Use `new Hono<{ Bindings: CloudflareBindings }>()` and access bindings via `c.env`. After any change to `wrangler.jsonc`, rerun `pnpm cf-typegen` and commit the regenerated file. Never edit it by hand.
 - The code runs in the Workers runtime, not Node.js. Node-only libraries (native addons such as `bcrypt`, `fs`-dependent packages) won't work. Prefer Web Standard APIs (`crypto.subtle`, `fetch`, `Request`/`Response`), and keep per-request CPU low: the free plan has tight CPU-time limits.
 - `observability.enabled` in `wrangler.jsonc` turns on Workers logs and traces. Keep it enabled.
-- Planned stack: D1 (SQLite) through Prisma ORM, Zod for validation, JWT for authentication, Vitest with Hono's `app.request()` for tests, ESLint + Prettier, and a Docker image published to Docker Hub. Prisma on D1 needs the D1 driver adapter. Schema changes are applied as SQL migrations with `wrangler d1 migrations apply`, not with `prisma migrate deploy`.
+- Stack: D1 (SQLite) through Prisma ORM, Zod for validation (via `@hono/zod-validator`), and JWT for authentication (Hono's built-in `hono/jwt`). Prisma, Zod and the tooling are installed; D1, the Prisma models and a Docker image published to Docker Hub are not set up yet. Prisma on D1 needs the D1 driver adapter. Schema changes are applied as SQL migrations with `wrangler d1 migrations apply`, not with `prisma migrate deploy`.
 - Planned environments: separate Dev and Prod Workers, each bound to its own D1 database. Terraform in `quickdish-infra` creates those databases.
 
 ## Domain model (starting point)

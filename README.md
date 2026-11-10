@@ -52,11 +52,17 @@ curl http://localhost:8787/health
 
 ## Scripts
 
-| Command           | Description                                                      |
-| ----------------- | ---------------------------------------------------------------- |
-| `pnpm dev`        | Start the local development server with Wrangler                 |
-| `pnpm run deploy` | Deploy the Worker to Cloudflare (requires `pnpm wrangler login`) |
-| `pnpm cf-typegen` | Regenerate binding types after changing `wrangler.jsonc`         |
+| Command           | Description                                                           |
+| ----------------- | --------------------------------------------------------------------- |
+| `pnpm dev`        | Start the local development server with Wrangler                      |
+| `pnpm build`      | Bundle the Worker into `dist/` without deploying                      |
+| `pnpm run deploy` | Deploy the Worker to Cloudflare (requires `pnpm wrangler login`)      |
+| `pnpm cf-typegen` | Regenerate binding types after changing `wrangler.jsonc`              |
+| `pnpm typecheck`  | Type-check the project with `tsc`                                     |
+| `pnpm lint`       | Lint with ESLint (`pnpm lint:fix` to auto-fix)                        |
+| `pnpm format`     | Format all files with Prettier (`pnpm format:check` to only check)    |
+| `pnpm test`       | Run the unit tests once (`pnpm test:watch` for watch mode)            |
+| `pnpm test:ci`    | Run tests with coverage (`coverage/`) and a JUnit report (`reports/`) |
 
 Use `pnpm run deploy`, not `pnpm deploy`: `pnpm deploy` is a built-in pnpm command that does something else.
 

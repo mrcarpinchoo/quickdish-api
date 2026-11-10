@@ -8,5 +8,6 @@
     "noEmit": true,
     "lib": ["ESNext"],
     "types": ["./worker-configuration.d.ts", "node"]
-  }
+  },
+  "include": ["src", "test", "*.ts"]
 }
