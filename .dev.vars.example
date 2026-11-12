@@ -1,0 +1,3 @@
+# Local secrets for `pnpm dev`. Copy to .dev.vars (git-ignored).
+# In Dev and Prod the secret is set with `wrangler secret put JWT_SECRET --env dev|prod`.
+JWT_SECRET=change-me-to-a-long-random-string
