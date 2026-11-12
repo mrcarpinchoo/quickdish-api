@@ -6,5 +6,7 @@ export type AppEnv = {
   Variables: {
     /** Set by `requireAuth` for authenticated requests. */
     user: AuthUser;
+    /** Set by `optionalAuth` on public routes: the caller, or null if anonymous. */
+    viewer: AuthUser | null;
   };
 };
