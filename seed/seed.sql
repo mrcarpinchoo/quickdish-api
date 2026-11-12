@@ -1,6 +1,5 @@
--- QuickDish sample menu: 4 categories and 12 products.
+-- QuickDish sample data: 4 categories, 12 products and 2 test users.
 -- Safe to run more than once: existing rows (same id) are left as they are.
--- Users (1 admin and 1 customer) are added in #8, once password hashing exists.
 --
 -- Local: pnpm db:seed:local
 -- Dev:   wrangler d1 execute DB --env dev --remote --file seed/seed.sql
@@ -24,3 +23,10 @@ INSERT OR IGNORE INTO "products" ("id", "name", "description", "priceCents", "im
   ('3c9e7a10-0002-4f2b-8e5a-000000000010', 'Churros', 'Tres churros con cajeta', 5500, 'https://placehold.co/600x400?text=Churros', 1, '8b1f4c2e-0001-4a6b-9c1d-000000000004'),
   ('3c9e7a10-0002-4f2b-8e5a-000000000011', 'Flan napolitano', 'Rebanada con caramelo', 4900, 'https://placehold.co/600x400?text=Flan', 1, '8b1f4c2e-0001-4a6b-9c1d-000000000004'),
   ('3c9e7a10-0002-4f2b-8e5a-000000000012', 'Pastel de tres leches', 'Rebanada individual', 6500, 'https://placehold.co/600x400?text=Tres+leches', 1, '8b1f4c2e-0001-4a6b-9c1d-000000000004');
+
+-- Test users for local and Dev only. Never seed them in Prod.
+--   admin@quickdish.test    / Admin12345     (ADMIN)
+--   customer@quickdish.test / Customer12345  (CUSTOMER)
+INSERT OR IGNORE INTO "users" ("id", "name", "email", "passwordHash", "role") VALUES
+  ('5d2a9e41-0003-4c7d-9b2f-000000000001', 'Admin QuickDish', 'admin@quickdish.test', 'pbkdf2$10000$n0zMd3OT7UkizjgzXWoBuA==$SUabqLGCdhqo23uLZSJ8c7mjqZozwJFMbSOuKSY0hng=', 'ADMIN'),
+  ('5d2a9e41-0003-4c7d-9b2f-000000000002', 'Cliente de Prueba', 'customer@quickdish.test', 'pbkdf2$10000$NjYF2bXsDygCc9e7gZlY7w==$5G5UIYliSZGYuIF+9XklPCqbAOolmmdGCrUfBBCggfw=', 'CUSTOMER');

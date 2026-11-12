@@ -40,6 +40,7 @@ Some of these are not set up yet; the project is in its initial scaffolding stag
 
 ```bash
 pnpm install
+cp .dev.vars.example .dev.vars   # then set JWT_SECRET to a long random string
 pnpm dev
 ```
 
@@ -47,7 +48,7 @@ The API is served at `http://localhost:8787`. Check that it is running:
 
 ```bash
 curl http://localhost:8787/health
-# {"status":"ok"}
+# {"status":"ok","env":"local","version":"local","db":"ok"}
 ```
 
 ### Local database
@@ -60,6 +61,22 @@ pnpm db:seed:local
 ```
 
 `/health` reports `"db": "ok"` once D1 answers.
+
+The seed also creates two test users (local and Dev only, never Prod):
+
+| Email                     | Password        | Role       |
+| ------------------------- | --------------- | ---------- |
+| `admin@quickdish.test`    | `Admin12345`    | `ADMIN`    |
+| `customer@quickdish.test` | `Customer12345` | `CUSTOMER` |
+
+### Authentication
+
+`POST /auth/login` returns `{ token, user }`. Send the token on protected routes as `Authorization: Bearer <token>`. It is a JWT (HS256) with `sub`, `role` and `exp` (8 hours), signed with the `JWT_SECRET` secret. Set it once per environment:
+
+```bash
+pnpm wrangler secret put JWT_SECRET --env dev
+pnpm wrangler secret put JWT_SECRET --env prod
+```
 
 ### Changing the data model
 
