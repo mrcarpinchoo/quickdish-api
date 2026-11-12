@@ -1,37 +1,71 @@
 /**
  * For more details on how to configure Wrangler, refer to:
  * https://developers.cloudflare.com/workers/wrangler/configuration/
+ *
+ * The top level is the local environment (`pnpm dev`). `env.dev` and `env.prod`
+ * are the deployed Workers (`wrangler deploy --env dev|prod`). Bindings and vars
+ * are not inherited by named environments, so each one declares its own.
  */
 {
     "$schema": "node_modules/wrangler/config-schema.json",
     "name": "quickdish-api",
     "main": "src/index.ts",
     "compatibility_date": "2026-11-09",
+    "compatibility_flags": ["nodejs_compat"],
     "observability": {
         "enabled": true
     },
-    "upload_source_maps": true
-    /**
-     * Smart Placement
-     * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
-     */
-    // "placement": {  "mode": "smart" }
-    /**
-     * Bindings
-     * Bindings allow your Worker to interact with resources on the Cloudflare Developer Platform, including
-     * databases, object storage, AI inference, real-time communication and more.
-     * https://developers.cloudflare.com/workers/runtime-apis/bindings/
-     */
-    /**
-     * Environment Variables
-     * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
-     * Note: Use secrets to store sensitive data.
-     * https://developers.cloudflare.com/workers/configuration/secrets/
-     */
-    // "vars": {  "MY_VARIABLE": "production_value" }
-    /**
-     * Service Bindings (communicate between multiple Workers)
-     * https://developers.cloudflare.com/workers/wrangler/configuration/#service-bindings
-     */
-    // "services": [  {   "binding": "MY_SERVICE",   "service": "my-service"  } ]
+    "upload_source_maps": true,
+    "vars": {
+        "ENVIRONMENT": "local",
+        // Overridden at deploy time with `--var VERSION:<git sha>` (#27).
+        "VERSION": "local",
+        // Comma-separated list of origins allowed by CORS.
+        "CORS_ORIGINS": "http://localhost:5173"
+    },
+    "d1_databases": [
+        {
+            "binding": "DB",
+            "database_name": "quickdish-local",
+            // Local only: wrangler dev keeps this database in .wrangler/state.
+            "database_id": "00000000-0000-0000-0000-000000000000",
+            "migrations_dir": "migrations"
+        }
+    ],
+    "env": {
+        "dev": {
+            "vars": {
+                "ENVIRONMENT": "dev",
+                "VERSION": "unknown",
+                // TODO(#14): add the Pages URL of the dev frontend.
+                "CORS_ORIGINS": "http://localhost:5173"
+            },
+            "d1_databases": [
+                {
+                    "binding": "DB",
+                    "database_name": "quickdish-dev",
+                    // TODO(#14): replace with the database_id created by Terraform.
+                    "database_id": "00000000-0000-0000-0000-000000000001",
+                    "migrations_dir": "migrations"
+                }
+            ]
+        },
+        "prod": {
+            "vars": {
+                "ENVIRONMENT": "prod",
+                "VERSION": "unknown",
+                // TODO(#14): set to the Pages URL of the prod frontend.
+                "CORS_ORIGINS": ""
+            },
+            "d1_databases": [
+                {
+                    "binding": "DB",
+                    "database_name": "quickdish-prod",
+                    // TODO(#14): replace with the database_id created by Terraform.
+                    "database_id": "00000000-0000-0000-0000-000000000002",
+                    "migrations_dir": "migrations"
+                }
+            ]
+        }
+    }
 }

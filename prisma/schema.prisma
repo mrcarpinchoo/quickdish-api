@@ -1,13 +1,130 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// QuickDish data model. Follows the class diagram from the project proposal.
+// Changes reach D1 as SQL migrations in migrations/ (see README), never through
+// `prisma migrate deploy`.
 
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
+  runtime  = "cloudflare"
 }
 
 datasource db {
   provider = "sqlite"
+}
+
+enum Role {
+  CUSTOMER
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING
+  IN_PREPARATION
+  READY
+  DELIVERED
+  CANCELLED
+}
+
+// Ids are UUID strings generated in application code, so an order and its items
+// can be inserted together in a single D1 batch.
+// Money is always stored as integer cents to avoid rounding errors.
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(CUSTOMER)
+  createdAt    DateTime @default(now())
+
+  cart   Cart?
+  orders Order[]
+
+  @@map("users")
+}
+
+model Category {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  description String?
+  active      Boolean @default(true)
+
+  products Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+  priceCents  Int
+  imageUrl    String?
+  available   Boolean @default(true)
+  categoryId  String
+
+  // Restrict: a category with products can't be deleted (409 in the API).
+  category   Category    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  @@index([categoryId])
+  @@map("products")
+}
+
+model Cart {
+  id     String @id @default(uuid())
+  userId String @unique
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CartItem[]
+
+  @@map("carts")
+}
+
+model CartItem {
+  id        String  @id @default(uuid())
+  cartId    String
+  productId String
+  quantity  Int
+  notes     String?
+
+  cart    Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  // Adding a product that is already in the cart increases its quantity.
+  @@unique([cartId, productId])
+  @@map("cart_items")
+}
+
+model Order {
+  id         String      @id @default(uuid())
+  userId     String
+  status     OrderStatus @default(PENDING)
+  totalCents Int
+  notes      String?
+  createdAt  DateTime    @default(now())
+
+  user  User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  items OrderItem[]
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@map("orders")
+}
+
+model OrderItem {
+  id             String  @id @default(uuid())
+  orderId        String
+  productId      String
+  quantity       Int
+  // Price frozen at purchase time: later product price changes don't alter it.
+  unitPriceCents Int
+  notes          String?
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@map("order_items")
 }
