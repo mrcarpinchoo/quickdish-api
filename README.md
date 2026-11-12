@@ -50,19 +50,46 @@ curl http://localhost:8787/health
 # {"status":"ok"}
 ```
 
+### Local database
+
+The local D1 database lives in `.wrangler/state`. Create its tables and load the sample menu once:
+
+```bash
+pnpm db:migrate:local
+pnpm db:seed:local
+```
+
+`/health` reports `"db": "ok"` once D1 answers.
+
+### Changing the data model
+
+1. Edit `prisma/schema.prisma` and run `pnpm db:generate`.
+2. Create an empty migration: `pnpm wrangler d1 migrations create DB <name>`.
+3. Fill it with the SQL diff between the local database and the new schema. Point `DATABASE_URL` in `.env` to the local SQLite file (`file:./.wrangler/state/v3/d1/miniflare-D1DatabaseObject/<hash>.sqlite`) and run:
+
+    ```bash
+    pnpm prisma migrate diff --config prisma7.config.ts --from-config-datasource --to-schema prisma/schema.prisma --script --output migrations/<file>.sql
+    ```
+
+4. Apply it with `pnpm db:migrate:local`. The pipeline applies the same files to Dev and Prod.
+
 ## Scripts
 
-| Command           | Description                                                           |
-| ----------------- | --------------------------------------------------------------------- |
-| `pnpm dev`        | Start the local development server with Wrangler                      |
-| `pnpm build`      | Bundle the Worker into `dist/` without deploying                      |
-| `pnpm run deploy` | Deploy the Worker to Cloudflare (requires `pnpm wrangler login`)      |
-| `pnpm cf-typegen` | Regenerate binding types after changing `wrangler.jsonc`              |
-| `pnpm typecheck`  | Type-check the project with `tsc`                                     |
-| `pnpm lint`       | Lint with ESLint (`pnpm lint:fix` to auto-fix)                        |
-| `pnpm format`     | Format all files with Prettier (`pnpm format:check` to only check)    |
-| `pnpm test`       | Run the unit tests once (`pnpm test:watch` for watch mode)            |
-| `pnpm test:ci`    | Run tests with coverage (`coverage/`) and a JUnit report (`reports/`) |
+| Command                 | Description                                                           |
+| ----------------------- | --------------------------------------------------------------------- |
+| `pnpm dev`              | Start the local development server with Wrangler                      |
+| `pnpm build`            | Bundle the Worker into `dist/` without deploying                      |
+| `pnpm run deploy`       | Deploy the Worker to Cloudflare (requires `pnpm wrangler login`)      |
+| `pnpm cf-typegen`       | Regenerate binding types after changing `wrangler.jsonc`              |
+| `pnpm typecheck`        | Type-check the project with `tsc`                                     |
+| `pnpm lint`             | Lint with ESLint (`pnpm lint:fix` to auto-fix)                        |
+| `pnpm format`           | Format all files with Prettier (`pnpm format:check` to only check)    |
+| `pnpm test`             | Run the unit tests once (`pnpm test:watch` for watch mode)            |
+| `pnpm test:ci`          | Run tests with coverage (`coverage/`) and a JUnit report (`reports/`) |
+| `pnpm test:coverage`    | Run tests with coverage only                                          |
+| `pnpm db:generate`      | Regenerate the Prisma Client after changing the schema                |
+| `pnpm db:migrate:local` | Apply the SQL migrations in `migrations/` to the local D1 database    |
+| `pnpm db:seed:local`    | Load the sample menu (`seed/seed.sql`) into the local D1 database     |
 
 Use `pnpm run deploy`, not `pnpm deploy`: `pnpm deploy` is a built-in pnpm command that does something else.
 
