@@ -1,4 +1,4 @@
-import type { User } from "../src/generated/prisma/client";
+import type { Category, Product, User } from "../src/generated/prisma/client";
 import { signToken } from "../src/lib/jwt";
 import { hashPassword } from "../src/lib/password";
 import {
@@ -25,6 +25,9 @@ class FakePrisma {
   reset() {
     this.users = [];
     this.usersWithOrders.clear();
+    this.categories = [];
+    this.products = [];
+    this.productsWithOrders.clear();
   }
 
   private find({ id, email }: Where) {
@@ -77,7 +80,7 @@ class FakePrisma {
       if (other && other.id !== user.id) {
         return Promise.reject(prismaError(UNIQUE_VIOLATION));
       }
-      Object.assign(user, data);
+      Object.assign(user, defined(data));
       return Promise.resolve(user);
     },
 
@@ -91,6 +94,156 @@ class FakePrisma {
       return Promise.resolve(user);
     }
   };
+
+  categories: Category[] = [];
+  products: Product[] = [];
+  /** Ids of products in past orders: deleting them fails like the real FK. */
+  productsWithOrders = new Set<string>();
+
+  private findCategory(id: string) {
+    return this.categories.find(c => c.id === id);
+  }
+
+  private nameTaken(name: string, exceptId?: string) {
+    return this.categories.some(c => c.name === name && c.id !== exceptId);
+  }
+
+  category = {
+    findMany: ({ where }: { where: { active?: boolean } }) =>
+      Promise.resolve(
+        this.categories
+          .filter(c => where.active === undefined || c.active === where.active)
+          .sort(byName)
+      ),
+
+    findUnique: ({ where }: { where: { id: string } }) =>
+      Promise.resolve(this.findCategory(where.id) ?? null),
+
+    create: ({ data }: { data: Omit<Category, "id"> }) => {
+      if (this.nameTaken(data.name)) {
+        return Promise.reject(prismaError(UNIQUE_VIOLATION));
+      }
+      const category: Category = { id: crypto.randomUUID(), ...data };
+      this.categories.push(category);
+      return Promise.resolve(category);
+    },
+
+    update: ({
+      where,
+      data
+    }: {
+      where: { id: string };
+      data: Partial<Category>;
+    }) => {
+      const category = this.findCategory(where.id);
+      if (!category) return Promise.reject(prismaError("P2025"));
+      if (data.name && this.nameTaken(data.name, category.id)) {
+        return Promise.reject(prismaError(UNIQUE_VIOLATION));
+      }
+      Object.assign(category, defined(data));
+      return Promise.resolve(category);
+    },
+
+    delete: ({ where }: { where: { id: string } }) => {
+      if (this.products.some(p => p.categoryId === where.id)) {
+        return Promise.reject(prismaError(FOREIGN_KEY_VIOLATION));
+      }
+      const category = this.findCategory(where.id);
+      if (!category) return Promise.reject(prismaError("P2025"));
+      this.categories = this.categories.filter(c => c.id !== where.id);
+      return Promise.resolve(category);
+    }
+  };
+
+  private findProduct(id: string) {
+    return this.products.find(p => p.id === id);
+  }
+
+  product = {
+    count: ({ where }: { where: { categoryId: string } }) =>
+      Promise.resolve(
+        this.products.filter(p => p.categoryId === where.categoryId).length
+      ),
+
+    findMany: ({ where }: { where: ProductWhere }) =>
+      Promise.resolve(
+        this.products
+          .filter(
+            p =>
+              (where.categoryId === undefined ||
+                p.categoryId === where.categoryId) &&
+              (where.available === undefined ||
+                p.available === where.available) &&
+              // SQLite LIKE is case-insensitive for ASCII.
+              (where.name === undefined ||
+                p.name
+                  .toLowerCase()
+                  .includes(where.name.contains.toLowerCase())) &&
+              (where.category === undefined ||
+                this.findCategory(p.categoryId)?.active ===
+                  where.category.active)
+          )
+          .sort(byName)
+      ),
+
+    findUnique: ({ where }: { where: { id: string } }) => {
+      const product = this.findProduct(where.id);
+      if (!product) return Promise.resolve(null);
+      const category = this.findCategory(product.categoryId);
+      if (!category) throw new Error("Product without category");
+      return Promise.resolve({ ...product, category });
+    },
+
+    create: ({ data }: { data: Omit<Product, "id"> }) => {
+      if (!this.findCategory(data.categoryId)) {
+        return Promise.reject(prismaError(FOREIGN_KEY_VIOLATION));
+      }
+      const product: Product = { id: crypto.randomUUID(), ...data };
+      this.products.push(product);
+      return Promise.resolve(product);
+    },
+
+    update: ({
+      where,
+      data
+    }: {
+      where: { id: string };
+      data: Partial<Product>;
+    }) => {
+      const product = this.findProduct(where.id);
+      if (!product) return Promise.reject(prismaError("P2025"));
+      Object.assign(product, defined(data));
+      return Promise.resolve(product);
+    },
+
+    delete: ({ where }: { where: { id: string } }) => {
+      if (this.productsWithOrders.has(where.id)) {
+        return Promise.reject(prismaError(FOREIGN_KEY_VIOLATION));
+      }
+      const product = this.findProduct(where.id);
+      if (!product) return Promise.reject(prismaError("P2025"));
+      this.products = this.products.filter(p => p.id !== where.id);
+      return Promise.resolve(product);
+    }
+  };
+}
+
+type ProductWhere = {
+  categoryId?: string;
+  available?: boolean;
+  name?: { contains: string };
+  category?: { active: boolean };
+};
+
+/** Prisma ignores `undefined` fields in `data`; `null` clears them. */
+function defined<T extends object>(data: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(data).filter(([, value]) => value !== undefined)
+  ) as Partial<T>;
+}
+
+function byName(a: { name: string }, b: { name: string }) {
+  return a.name.localeCompare(b.name);
 }
 
 export const fakePrisma = new FakePrisma();
@@ -118,4 +271,34 @@ export async function addUser({
   fakePrisma.users.push(user);
   const token = await signToken(user, TEST_JWT_SECRET);
   return { user, token };
+}
+
+/** Adds a category to the fake database. */
+export function addCategory(data: Partial<Category> = {}): Category {
+  const category: Category = {
+    id: crypto.randomUUID(),
+    name: `Category ${fakePrisma.categories.length + 1}`,
+    description: null,
+    active: true,
+    ...data
+  };
+  fakePrisma.categories.push(category);
+  return category;
+}
+
+/** Adds a product to the fake database. */
+export function addProduct(
+  data: Partial<Product> & Pick<Product, "categoryId">
+): Product {
+  const product: Product = {
+    id: crypto.randomUUID(),
+    name: `Product ${fakePrisma.products.length + 1}`,
+    description: null,
+    priceCents: 3500,
+    imageUrl: null,
+    available: true,
+    ...data
+  };
+  fakePrisma.products.push(product);
+  return product;
 }

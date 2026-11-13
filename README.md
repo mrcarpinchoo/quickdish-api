@@ -78,6 +78,28 @@ pnpm wrangler secret put JWT_SECRET --env dev
 pnpm wrangler secret put JWT_SECRET --env prod
 ```
 
+### Menu catalog
+
+Reading the menu is public; changing it requires an admin token.
+
+| Endpoint                                  | Who    | Notes                                                                                           |
+| ----------------------------------------- | ------ | ----------------------------------------------------------------------------------------------- |
+| `GET /categories`                         | Public | Active categories by name                                                                       |
+| `GET /categories/:id`                     | Public | Inactive → 404                                                                                  |
+| `POST /categories`, `PUT /categories/:id` | Admin  | `{ name, description?, active? }`; repeated name → 409                                          |
+| `DELETE /categories/:id`                  | Admin  | With products → 409: deactivate it instead                                                      |
+| `GET /products?categoryId=&q=`            | Public | Available products of active categories; `q` searches names                                     |
+| `GET /products/:id`                       | Public | Hidden from the menu → 404                                                                      |
+| `POST /products`, `PUT /products/:id`     | Admin  | `{ name, description?, priceCents, imageUrl?, available?, categoryId }`; unknown category → 404 |
+| `PATCH /products/:id/availability`        | Admin  | `{ available }`                                                                                 |
+| `DELETE /products/:id`                    | Admin  | In past orders → 409: mark it unavailable instead                                               |
+
+Admins add `?all=true` to both lists to also see inactive categories and unavailable products.
+
+- `PUT` updates only the fields you send; send `null` to clear `description` or `imageUrl`.
+- A product can be created in an inactive category. It stays hidden until the category is activated, which lets admins prepare a menu section before publishing it.
+- `q` ignores case but not accents: SQLite `LIKE` only folds ASCII, so `cafe` doesn't match `Café`.
+
 ### Changing the data model
 
 1. Edit `prisma/schema.prisma` and run `pnpm db:generate`.

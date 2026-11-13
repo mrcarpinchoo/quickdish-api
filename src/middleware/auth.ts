@@ -42,3 +42,22 @@ export function requireRole(...roles: Role[]) {
     await next();
   });
 }
+
+/**
+ * For public routes that show more to admins. Sets `c.var.viewer` to the
+ * token's user, or null without a valid token. Never answers 401: a stale
+ * token just gets the public view.
+ */
+export const optionalAuth = createMiddleware<AppEnv>(async (c, next) => {
+  const token = BEARER.exec(c.req.header("Authorization") ?? "")?.[1];
+  let viewer = null;
+  if (token) {
+    try {
+      viewer = await verifyToken(token, c.env.JWT_SECRET);
+    } catch {
+      // Invalid or expired token: treat the caller as anonymous.
+    }
+  }
+  c.set("viewer", viewer);
+  await next();
+});
