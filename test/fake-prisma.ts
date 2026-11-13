@@ -1,4 +1,13 @@
-import type { Category, Product, User } from "../src/generated/prisma/client";
+import type {
+  Cart,
+  CartItem,
+  Category,
+  Order,
+  OrderItem,
+  Product,
+  User
+} from "../src/generated/prisma/client";
+import type { OrderPlan } from "../src/lib/order-batch";
 import { signToken } from "../src/lib/jwt";
 import { hashPassword } from "../src/lib/password";
 import {
@@ -28,6 +37,11 @@ class FakePrisma {
     this.categories = [];
     this.products = [];
     this.productsWithOrders.clear();
+    this.carts = [];
+    this.cartItems = [];
+    this.orders = [];
+    this.orderItems = [];
+    this.failNextSave = false;
   }
 
   private find({ id, email }: Where) {
@@ -217,13 +231,188 @@ class FakePrisma {
     },
 
     delete: ({ where }: { where: { id: string } }) => {
-      if (this.productsWithOrders.has(where.id)) {
+      if (
+        this.productsWithOrders.has(where.id) ||
+        this.orderItems.some(i => i.productId === where.id)
+      ) {
         return Promise.reject(prismaError(FOREIGN_KEY_VIOLATION));
       }
       const product = this.findProduct(where.id);
       if (!product) return Promise.reject(prismaError("P2025"));
       this.products = this.products.filter(p => p.id !== where.id);
+      // CartItem -> Product is ON DELETE CASCADE.
+      this.cartItems = this.cartItems.filter(i => i.productId !== where.id);
       return Promise.resolve(product);
+    }
+  };
+
+  carts: Cart[] = [];
+  cartItems: CartItem[] = [];
+
+  /** Cart with items -> product -> category, like ITEMS_WITH_PRODUCT. */
+  private hydrateCart(cart: Cart) {
+    return {
+      ...cart,
+      items: this.cartItems
+        .filter(i => i.cartId === cart.id)
+        .map(i => ({ ...i, product: this.productWithCategory(i.productId) }))
+    };
+  }
+
+  private productWithCategory(id: string) {
+    const product = this.findProduct(id);
+    const category = product && this.findCategory(product.categoryId);
+    if (!product || !category) throw new Error(`Missing product ${id}`);
+    return { ...product, category };
+  }
+
+  private cartOf(userId: string) {
+    return this.carts.find(c => c.userId === userId);
+  }
+
+  cart = {
+    upsert: ({ where }: { where: { userId: string } }) => {
+      let cart = this.cartOf(where.userId);
+      if (!cart) {
+        cart = { id: crypto.randomUUID(), userId: where.userId };
+        this.carts.push(cart);
+      }
+      return Promise.resolve(this.hydrateCart(cart));
+    },
+
+    findUnique: ({ where }: { where: { userId: string } }) => {
+      const cart = this.cartOf(where.userId);
+      return Promise.resolve(cart ? this.hydrateCart(cart) : null);
+    }
+  };
+
+  cartItem = {
+    findUnique: ({
+      where
+    }: {
+      where: { cartId_productId: { cartId: string; productId: string } };
+    }) => {
+      const { cartId, productId } = where.cartId_productId;
+      return Promise.resolve(
+        this.cartItems.find(
+          i => i.cartId === cartId && i.productId === productId
+        ) ?? null
+      );
+    },
+
+    findFirst: ({
+      where
+    }: {
+      where: { id: string; cart: { userId: string } };
+    }) => {
+      const cart = this.cartOf(where.cart.userId);
+      return Promise.resolve(
+        this.cartItems.find(i => i.id === where.id && i.cartId === cart?.id) ??
+          null
+      );
+    },
+
+    create: ({ data }: { data: Omit<CartItem, "id"> }) => {
+      const item: CartItem = { id: crypto.randomUUID(), ...data };
+      this.cartItems.push(item);
+      return Promise.resolve(item);
+    },
+
+    update: ({
+      where,
+      data
+    }: {
+      where: { id: string };
+      data: Partial<CartItem>;
+    }) => {
+      const item = this.cartItems.find(i => i.id === where.id);
+      if (!item) return Promise.reject(prismaError("P2025"));
+      Object.assign(item, defined(data));
+      return Promise.resolve(item);
+    },
+
+    delete: ({ where }: { where: { id: string } }) => {
+      const item = this.cartItems.find(i => i.id === where.id);
+      if (!item) return Promise.reject(prismaError("P2025"));
+      this.cartItems = this.cartItems.filter(i => i.id !== where.id);
+      return Promise.resolve(item);
+    },
+
+    deleteMany: ({ where }: { where: { cart: { userId: string } } }) => {
+      const cart = this.cartOf(where.cart.userId);
+      const before = this.cartItems.length;
+      this.cartItems = this.cartItems.filter(i => i.cartId !== cart?.id);
+      return Promise.resolve({ count: before - this.cartItems.length });
+    }
+  };
+
+  orders: Order[] = [];
+  orderItems: OrderItem[] = [];
+  /** Makes the next saveOrder fail, like a D1 batch that rolls back. */
+  failNextSave = false;
+
+  /** What the real saveOrder batch does: all or nothing. */
+  saveOrder(plan: OrderPlan) {
+    if (this.failNextSave) {
+      this.failNextSave = false;
+      return Promise.reject(new Error("D1_ERROR: batch failed"));
+    }
+    this.orders.push({
+      id: plan.id,
+      userId: plan.userId,
+      status: "PENDING",
+      totalCents: plan.totalCents,
+      notes: plan.notes,
+      createdAt: plan.createdAt
+    });
+    for (const item of plan.items) {
+      this.orderItems.push({ ...item, orderId: plan.id });
+    }
+    this.cartItems = this.cartItems.filter(
+      i => !plan.cartItemIds.includes(i.id)
+    );
+    return Promise.resolve();
+  }
+
+  private hydrateOrder(order: Order) {
+    return {
+      ...order,
+      items: this.orderItems
+        .filter(i => i.orderId === order.id)
+        .map(i => {
+          const product = this.findProduct(i.productId);
+          if (!product) throw new Error(`Missing product ${i.productId}`);
+          return { ...i, product };
+        })
+    };
+  }
+
+  order = {
+    findMany: ({ where }: { where: { userId: string } }) =>
+      Promise.resolve(
+        this.orders
+          .filter(o => o.userId === where.userId)
+          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+          .map(o => this.hydrateOrder(o))
+      ),
+
+    findUnique: ({ where }: { where: { id: string } }) => {
+      const order = this.orders.find(o => o.id === where.id);
+      return Promise.resolve(order ? this.hydrateOrder(order) : null);
+    },
+
+    updateMany: ({
+      where,
+      data
+    }: {
+      where: { id: string; status: Order["status"] };
+      data: Partial<Order>;
+    }) => {
+      const matches = this.orders.filter(
+        o => o.id === where.id && o.status === where.status
+      );
+      for (const order of matches) Object.assign(order, defined(data));
+      return Promise.resolve({ count: matches.length });
     }
   };
 }
@@ -301,4 +490,36 @@ export function addProduct(
   };
   fakePrisma.products.push(product);
   return product;
+}
+
+/** Adds an order with its items to the fake database. */
+export function addOrder({
+  userId,
+  status = "PENDING",
+  createdAt = new Date(),
+  items
+}: {
+  userId: string;
+  status?: Order["status"];
+  createdAt?: Date;
+  items: { productId: string; quantity: number; unitPriceCents: number }[];
+}): Order {
+  const order: Order = {
+    id: crypto.randomUUID(),
+    userId,
+    status,
+    totalCents: items.reduce((s, i) => s + i.quantity * i.unitPriceCents, 0),
+    notes: null,
+    createdAt
+  };
+  fakePrisma.orders.push(order);
+  for (const item of items) {
+    fakePrisma.orderItems.push({
+      id: crypto.randomUUID(),
+      orderId: order.id,
+      notes: null,
+      ...item
+    });
+  }
+  return order;
 }
