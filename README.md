@@ -100,6 +100,30 @@ Admins add `?all=true` to both lists to also see inactive categories and unavail
 - A product can be created in an inactive category. It stays hidden until the category is activated, which lets admins prepare a menu section before publishing it.
 - `q` ignores case but not accents: SQLite `LIKE` only folds ASCII, so `cafe` doesn't match `Café`.
 
+### Cart and orders
+
+Every route needs a token. Each user has one cart, created on first use.
+
+| Endpoint                  | Notes                                                                                             |
+| ------------------------- | ------------------------------------------------------------------------------------------------- |
+| `GET /cart`               | `{ id, items, totalCents }`; each item has `quantity`, `notes`, `subtotalCents` and its `product` |
+| `POST /cart/items`        | `{ productId, quantity, notes? }` → 201; a product already in the cart adds to its quantity       |
+| `PATCH /cart/items/:id`   | `{ quantity?, notes? }`                                                                           |
+| `DELETE /cart/items/:id`  | Removes the item                                                                                  |
+| `DELETE /cart`            | Empties the cart → 204                                                                            |
+| `POST /orders`            | `{ notes? }` → 201; turns the cart into a `PENDING` order and empties it                          |
+| `GET /orders/mine`        | The user's orders, newest first                                                                   |
+| `GET /orders/:id`         | The owner's order, or any order for an admin; otherwise 404                                       |
+| `POST /orders/:id/cancel` | Owner only, and only while `PENDING`; otherwise 409 `ORDER_NOT_CANCELLABLE`                       |
+
+The cart mutations return the whole updated cart, so the UI can render it without another request.
+
+- Quantities go from 1 to 20 per product. Adding past 20 → 409 `QUANTITY_LIMIT`.
+- Adding a product hidden from the menu → 409 `PRODUCT_UNAVAILABLE`. If a product is hidden after it's in the cart, `GET /cart` shows it with `product.available: false` and `POST /orders` answers 409 with those products in `details`.
+- Someone else's cart item or order → 404, so ids of other users aren't revealed.
+- Cart totals use current prices. An order item keeps `unitPriceCents` from the moment of purchase, so later price changes don't alter past orders.
+- The order, its items and the cart cleanup are written in a single D1 batch (`src/lib/order-batch.ts`), which D1 runs as one transaction: a failure never leaves a half-written order.
+
 ### Changing the data model
 
 1. Edit `prisma/schema.prisma` and run `pnpm db:generate`.
