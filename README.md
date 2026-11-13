@@ -96,6 +96,10 @@ Reading the menu is public; changing it requires an admin token.
 
 Admins add `?all=true` to both lists to also see inactive categories and unavailable products.
 
+- `PUT` updates only the fields you send; send `null` to clear `description` or `imageUrl`.
+- A product can be created in an inactive category. It stays hidden until the category is activated, which lets admins prepare a menu section before publishing it.
+- `q` ignores case but not accents: SQLite `LIKE` only folds ASCII, so `cafe` doesn't match `Café`.
+
 ### Changing the data model
 
 1. Edit `prisma/schema.prisma` and run `pnpm db:generate`.

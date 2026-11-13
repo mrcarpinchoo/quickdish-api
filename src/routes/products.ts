@@ -5,7 +5,8 @@ import { optionalAuth, requireAuth, requireRole } from "../middleware/auth";
 import {
   availabilitySchema,
   listProductsQuery,
-  productSchema
+  productSchema,
+  updateProductSchema
 } from "../schemas/catalog";
 import {
   createProduct,
@@ -57,15 +58,20 @@ products.post("/", ...adminOnly, validate("json", productSchema), async c => {
   return c.json(product, 201);
 });
 
-/** PUT /products/:id replaces the product (admin). */
-products.put("/:id", ...adminOnly, validate("json", productSchema), async c => {
-  const product = await updateProduct(
-    createPrisma(c.env.DB),
-    c.req.param("id"),
-    c.req.valid("json")
-  );
-  return c.json(product);
-});
+/** PUT /products/:id updates the fields sent; the rest stay as they are (admin). */
+products.put(
+  "/:id",
+  ...adminOnly,
+  validate("json", updateProductSchema),
+  async c => {
+    const product = await updateProduct(
+      createPrisma(c.env.DB),
+      c.req.param("id"),
+      c.req.valid("json")
+    );
+    return c.json(product);
+  }
+);
 
 /** PATCH /products/:id/availability with `{ available }` (admin). */
 products.patch(

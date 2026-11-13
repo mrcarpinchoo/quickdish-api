@@ -2,7 +2,11 @@ import { Hono } from "hono";
 import { createPrisma } from "../lib/db";
 import { validate } from "../lib/validation";
 import { optionalAuth, requireAuth, requireRole } from "../middleware/auth";
-import { categorySchema, listCategoriesQuery } from "../schemas/catalog";
+import {
+  categorySchema,
+  listCategoriesQuery,
+  updateCategorySchema
+} from "../schemas/catalog";
 import {
   createCategory,
   deleteCategory,
@@ -55,11 +59,11 @@ categories.post(
   }
 );
 
-/** PUT /categories/:id replaces the category (admin). */
+/** PUT /categories/:id updates the fields sent; the rest stay as they are (admin). */
 categories.put(
   "/:id",
   ...adminOnly,
-  validate("json", categorySchema),
+  validate("json", updateCategorySchema),
   async c => {
     const category = await updateCategory(
       createPrisma(c.env.DB),

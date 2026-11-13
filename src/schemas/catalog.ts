@@ -34,8 +34,23 @@ export const productSchema = z.object({
   categoryId: z.string().min(1)
 });
 
+/** PUT body: send only the fields to change. `null` clears description and imageUrl. */
+export const updateCategorySchema = categorySchema
+  .partial()
+  .refine(data => Object.values(data).some(v => v !== undefined), {
+    message: "Send at least one field to update"
+  });
+
+export const updateProductSchema = productSchema
+  .partial()
+  .refine(data => Object.values(data).some(v => v !== undefined), {
+    message: "Send at least one field to update"
+  });
+
 export const availabilitySchema = z.object({ available: z.boolean() });
 
 export type CategoryInput = z.infer<typeof categorySchema>;
 export type ProductInput = z.infer<typeof productSchema>;
+export type UpdateCategoryInput = z.infer<typeof updateCategorySchema>;
+export type UpdateProductInput = z.infer<typeof updateProductSchema>;
 export type ListProductsQuery = z.infer<typeof listProductsQuery>;

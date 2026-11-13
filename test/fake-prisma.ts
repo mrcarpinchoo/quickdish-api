@@ -80,7 +80,7 @@ class FakePrisma {
       if (other && other.id !== user.id) {
         return Promise.reject(prismaError(UNIQUE_VIOLATION));
       }
-      Object.assign(user, data);
+      Object.assign(user, defined(data));
       return Promise.resolve(user);
     },
 
@@ -140,7 +140,7 @@ class FakePrisma {
       if (data.name && this.nameTaken(data.name, category.id)) {
         return Promise.reject(prismaError(UNIQUE_VIOLATION));
       }
-      Object.assign(category, data);
+      Object.assign(category, defined(data));
       return Promise.resolve(category);
     },
 
@@ -212,7 +212,7 @@ class FakePrisma {
     }) => {
       const product = this.findProduct(where.id);
       if (!product) return Promise.reject(prismaError("P2025"));
-      Object.assign(product, data);
+      Object.assign(product, defined(data));
       return Promise.resolve(product);
     },
 
@@ -234,6 +234,13 @@ type ProductWhere = {
   name?: { contains: string };
   category?: { active: boolean };
 };
+
+/** Prisma ignores `undefined` fields in `data`; `null` clears them. */
+function defined<T extends object>(data: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(data).filter(([, value]) => value !== undefined)
+  ) as Partial<T>;
+}
 
 function byName(a: { name: string }, b: { name: string }) {
   return a.name.localeCompare(b.name);

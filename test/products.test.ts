@@ -117,6 +117,18 @@ describe("GET /products", () => {
 
     expect(await names(res)).toHaveLength(3);
   });
+
+  it("treats an invalid token as anonymous", async () => {
+    const res = await request(
+      "/products?all=true",
+      "GET",
+      undefined,
+      "not.a.jwt"
+    );
+
+    expect(res.status).toBe(200);
+    expect(await names(res)).toHaveLength(3);
+  });
 });
 
 describe("GET /products/:id", () => {
@@ -241,8 +253,12 @@ describe("POST /products", () => {
 });
 
 describe("PUT /products/:id", () => {
-  it("replaces the product", async () => {
-    const product = addProduct({ categoryId: tacos.id, imageUrl: "https://x" });
+  it("updates the fields sent and keeps the rest", async () => {
+    const product = addProduct({
+      categoryId: tacos.id,
+      description: "Con piña",
+      imageUrl: "https://x"
+    });
     const bowls = addCategory({ name: "Bowls" });
 
     const res = await request(
@@ -256,12 +272,63 @@ describe("PUT /products/:id", () => {
     expect(await res.json()).toEqual({
       id: product.id,
       name: "Bowl",
-      description: null,
+      description: "Con piña",
       priceCents: 12900,
-      imageUrl: null,
+      imageUrl: "https://x",
       available: true,
       categoryId: bowls.id
     });
+  });
+
+  it("keeps a hidden product hidden when available is omitted", async () => {
+    const product = addProduct({ categoryId: tacos.id, available: false });
+
+    const res = await request(
+      `/products/${product.id}`,
+      "PUT",
+      { name: "Nuevo nombre" },
+      adminToken
+    );
+    const menu = await request("/products");
+
+    expect(await res.json()).toMatchObject({
+      name: "Nuevo nombre",
+      available: false
+    });
+    expect(await menu.json()).toEqual([]);
+  });
+
+  it("clears the image with null", async () => {
+    const product = addProduct({ categoryId: tacos.id, imageUrl: "https://x" });
+
+    const res = await request(
+      `/products/${product.id}`,
+      "PUT",
+      { imageUrl: null },
+      adminToken
+    );
+
+    expect(await res.json()).toMatchObject({ imageUrl: null });
+  });
+
+  it("returns 400 for an empty body or an invalid field", async () => {
+    const product = addProduct({ categoryId: tacos.id });
+
+    const empty = await request(
+      `/products/${product.id}`,
+      "PUT",
+      {},
+      adminToken
+    );
+    const badPrice = await request(
+      `/products/${product.id}`,
+      "PUT",
+      { priceCents: 0 },
+      adminToken
+    );
+
+    expect(empty.status).toBe(400);
+    expect(badPrice.status).toBe(400);
   });
 
   it("returns 404 for an unknown product", async () => {

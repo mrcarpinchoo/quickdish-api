@@ -179,7 +179,7 @@ describe("POST /categories", () => {
 });
 
 describe("PUT /categories/:id", () => {
-  it("replaces the category", async () => {
+  it("updates the fields sent and keeps the rest", async () => {
     const category = addCategory({ name: "Tacos", description: "Viejo" });
 
     const res = await request(
@@ -193,9 +193,51 @@ describe("PUT /categories/:id", () => {
     expect(await res.json()).toEqual({
       id: category.id,
       name: "Tacos y más",
-      description: null,
+      description: "Viejo",
       active: false
     });
+  });
+
+  it("keeps an inactive category hidden when only the name changes", async () => {
+    const category = addCategory({ name: "Temporada", active: false });
+
+    await request(
+      `/categories/${category.id}`,
+      "PUT",
+      { name: "Temporada navideña" },
+      adminToken
+    );
+
+    expect(fakePrisma.categories[0]).toMatchObject({
+      name: "Temporada navideña",
+      active: false
+    });
+  });
+
+  it("clears the description with null", async () => {
+    const category = addCategory({ description: "Viejo" });
+
+    const res = await request(
+      `/categories/${category.id}`,
+      "PUT",
+      { description: null },
+      adminToken
+    );
+
+    expect(await res.json()).toMatchObject({ description: null });
+  });
+
+  it("returns 400 for an empty body", async () => {
+    const category = addCategory();
+
+    const res = await request(
+      `/categories/${category.id}`,
+      "PUT",
+      {},
+      adminToken
+    );
+
+    expect(res.status).toBe(400);
   });
 
   it("returns 404 for an unknown category", async () => {

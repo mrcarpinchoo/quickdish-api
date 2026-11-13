@@ -9,7 +9,9 @@ import {
 import type {
   CategoryInput,
   ListProductsQuery,
-  ProductInput
+  ProductInput,
+  UpdateCategoryInput,
+  UpdateProductInput
 } from "../schemas/catalog";
 
 // ---------- Categories ----------
@@ -58,40 +60,37 @@ export async function getCategory(
   return category;
 }
 
-/** Fills the optional fields so a PUT replaces the whole category. */
-function categoryData(input: CategoryInput) {
-  return {
-    name: input.name,
-    description: input.description ?? null,
-    active: input.active ?? true
-  };
-}
-
 /** Creates a category. Repeated name → 409. */
 export async function createCategory(
   prisma: Prisma,
   input: CategoryInput
 ): Promise<Category> {
   try {
-    return await prisma.category.create({ data: categoryData(input) });
+    return await prisma.category.create({
+      data: {
+        name: input.name,
+        description: input.description ?? null,
+        active: input.active ?? true
+      }
+    });
   } catch (err) {
     if (isPrismaError(err, UNIQUE_VIOLATION)) throw categoryNameTaken();
     throw err;
   }
 }
 
-/** Replaces a category. Missing → 404, repeated name → 409. */
+/**
+ * Updates the fields sent; omitted ones keep their value (Prisma ignores
+ * `undefined`). Missing → 404, repeated name → 409.
+ */
 export async function updateCategory(
   prisma: Prisma,
   id: string,
-  input: CategoryInput
+  input: UpdateCategoryInput
 ): Promise<Category> {
   await getCategory(prisma, id);
   try {
-    return await prisma.category.update({
-      where: { id },
-      data: categoryData(input)
-    });
+    return await prisma.category.update({ where: { id }, data: input });
   } catch (err) {
     if (isPrismaError(err, UNIQUE_VIOLATION)) throw categoryNameTaken();
     throw err;
@@ -166,39 +165,41 @@ export async function getProduct(
   return rest;
 }
 
-/** Fills the optional fields so a PUT replaces the whole product. */
-async function productData(prisma: Prisma, input: ProductInput) {
-  // Unknown category → 404 instead of a foreign key error.
-  await getCategory(prisma, input.categoryId);
-  return {
-    name: input.name,
-    description: input.description ?? null,
-    priceCents: input.priceCents,
-    imageUrl: input.imageUrl ?? null,
-    available: input.available ?? true,
-    categoryId: input.categoryId
-  };
-}
-
-/** Creates a product. Unknown category → 404. */
+/**
+ * Creates a product. Unknown category → 404 instead of a foreign key error.
+ * An inactive category is allowed: the product stays hidden until it's active.
+ */
 export async function createProduct(
   prisma: Prisma,
   input: ProductInput
 ): Promise<Product> {
-  return prisma.product.create({ data: await productData(prisma, input) });
+  await getCategory(prisma, input.categoryId);
+  return prisma.product.create({
+    data: {
+      name: input.name,
+      description: input.description ?? null,
+      priceCents: input.priceCents,
+      imageUrl: input.imageUrl ?? null,
+      available: input.available ?? true,
+      categoryId: input.categoryId
+    }
+  });
 }
 
-/** Replaces a product. Missing product or category → 404. */
+/**
+ * Updates the fields sent; omitted ones keep their value, so editing a
+ * hidden product doesn't show it again. Missing product or category → 404.
+ */
 export async function updateProduct(
   prisma: Prisma,
   id: string,
-  input: ProductInput
+  input: UpdateProductInput
 ): Promise<Product> {
   await getProduct(prisma, id);
-  return prisma.product.update({
-    where: { id },
-    data: await productData(prisma, input)
-  });
+  if (input.categoryId !== undefined) {
+    await getCategory(prisma, input.categoryId);
+  }
+  return prisma.product.update({ where: { id }, data: input });
 }
 
 /** Shows or hides a product in the menu. Missing → 404. */
