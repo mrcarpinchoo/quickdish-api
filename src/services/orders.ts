@@ -43,7 +43,9 @@ function orderNotFound(): ApiError {
 /**
  * Turns the user's cart into a PENDING order. Empty cart → 400; any product
  * hidden from the menu → 409 with the products in `details`. Each item keeps
- * the price it has now, so later price changes don't alter the order.
+ * the price it has now, so later price changes don't alter the order. If
+ * the cart changes before the order is saved (a second submit, a quantity
+ * change), nothing is written → 409 `CART_CHANGED`.
  */
 export async function createOrder(
   prisma: Prisma,
@@ -74,6 +76,7 @@ export async function createOrder(
 
   const items = cart.items.map(item => ({
     id: crypto.randomUUID(),
+    cartItemId: item.id,
     productId: item.productId,
     quantity: item.quantity,
     unitPriceCents: item.product.priceCents,
@@ -88,10 +91,15 @@ export async function createOrder(
     ),
     notes: input.notes ?? null,
     createdAt: new Date(),
-    items,
-    cartItemIds: cart.items.map(item => item.id)
+    items
   };
-  await saveOrder(db, plan);
+  if (!(await saveOrder(db, plan))) {
+    throw new ApiError(
+      409,
+      "CART_CHANGED",
+      "The cart changed while placing the order; review it and try again"
+    );
+  }
 
   // TODO(#2): send `order_created` to Sentry with an `order.create` span.
   console.log(

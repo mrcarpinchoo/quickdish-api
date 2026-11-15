@@ -357,6 +357,16 @@ class FakePrisma {
       this.failNextSave = false;
       return Promise.reject(new Error("D1_ERROR: batch failed"));
     }
+    const cartUnchanged = plan.items.every(item => {
+      const current = this.cartItems.find(i => i.id === item.cartItemId);
+      const product = current && this.findProduct(current.productId);
+      return (
+        current?.quantity === item.quantity &&
+        current.notes === item.notes &&
+        product?.priceCents === item.unitPriceCents
+      );
+    });
+    if (!cartUnchanged) return Promise.resolve(false);
     this.orders.push({
       id: plan.id,
       userId: plan.userId,
@@ -368,10 +378,9 @@ class FakePrisma {
     for (const item of plan.items) {
       this.orderItems.push({ ...item, orderId: plan.id });
     }
-    this.cartItems = this.cartItems.filter(
-      i => !plan.cartItemIds.includes(i.id)
-    );
-    return Promise.resolve();
+    const ordered = new Set(plan.items.map(item => item.cartItemId));
+    this.cartItems = this.cartItems.filter(i => !ordered.has(i.id));
+    return Promise.resolve(true);
   }
 
   private hydrateOrder(order: Order) {

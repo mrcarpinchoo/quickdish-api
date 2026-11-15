@@ -158,6 +158,24 @@ describe("POST /orders", () => {
     expect(fakePrisma.cartItems).toHaveLength(1);
   });
 
+  it("returns 409 CART_CHANGED when the cart changes before the order is saved", async () => {
+    await fillCart([[pastor, 2]]);
+    const save = fakePrisma.saveOrder.bind(fakePrisma);
+    vi.spyOn(fakePrisma, "saveOrder").mockImplementationOnce(plan => {
+      // Another request adds units between the cart read and the batch.
+      const [item] = fakePrisma.cartItems;
+      if (item) item.quantity = 5;
+      return save(plan);
+    });
+
+    const res = await placeOrder();
+
+    expect(res.status).toBe(409);
+    expect((await res.json<ErrorBody>()).error.code).toBe("CART_CHANGED");
+    expect(fakePrisma.orders).toHaveLength(0);
+    expect(fakePrisma.cartItems[0]?.quantity).toBe(5);
+  });
+
   it("logs order_created with the id and total", async () => {
     await fillCart([[pastor, 1]]);
 

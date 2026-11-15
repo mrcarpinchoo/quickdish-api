@@ -123,6 +123,8 @@ The cart mutations return the whole updated cart, so the UI can render it withou
 - Someone else's cart item or order → 404, so ids of other users aren't revealed.
 - Cart totals use current prices. An order item keeps `unitPriceCents` from the moment of purchase, so later price changes don't alter past orders.
 - The order, its items and the cart cleanup are written in a single D1 batch (`src/lib/order-batch.ts`), which D1 runs as one transaction: a failure never leaves a half-written order.
+- The batch first checks that the cart is still exactly as it was read (same items, quantities, notes and prices, all still on the menu). If not, nothing is written and the API answers 409 `CART_CHANGED`. This stops a double submit from creating two orders and keeps units added while the order was being placed.
+- `GET /orders/mine` isn't paginated yet; it returns every order of the user.
 
 ### Changing the data model
 
