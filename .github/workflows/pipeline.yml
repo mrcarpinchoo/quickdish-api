@@ -1,0 +1,115 @@
+name: API pipeline
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+# A new push to a PR cancels its previous run; runs on main always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE: quickdish-api:ci
+
+# Every check runs inside the Docker image (see Dockerfile), the same isolated
+# environment the team uses locally.
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: ${{ env.IMAGE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Check generated types
+        run: docker run --rm "$IMAGE" pnpm cf-typegen:check
+
+      - name: Type check
+        run: docker run --rm "$IMAGE" pnpm typecheck
+
+      - name: Lint
+        run: docker run --rm "$IMAGE" pnpm lint
+
+      - name: Check formatting
+        run: docker run --rm "$IMAGE" pnpm format:check
+
+      # The github-actions reporter writes a results table for the run summary.
+      - name: Run unit tests with coverage
+        run: >
+          docker run --name tests
+          -e GITHUB_ACTIONS=true
+          -e GITHUB_STEP_SUMMARY=/tmp/summary.md
+          "$IMAGE" pnpm test:ci --reporter=github-actions
+
+      - name: Copy test results out of the container
+        if: always()
+        run: |
+          docker cp tests:/app/reports reports || true
+          docker cp tests:/app/coverage coverage || true
+          if docker cp tests:/tmp/summary.md summary.md; then
+            cat summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: reports/junit.xml
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: ${{ env.IMAGE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Bundle the Worker
+        run: |
+          docker run --name build "$IMAGE" pnpm build
+          docker cp build:/app/dist dist
+
+      - name: Upload Worker bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: worker-bundle
+          path: dist

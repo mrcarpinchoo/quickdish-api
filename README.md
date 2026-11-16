@@ -14,18 +14,18 @@ The API is built with [Hono](https://hono.dev/) and runs on [Cloudflare Workers]
 
 ## Tech stack
 
-| Component        | Technology                          |
-| ---------------- | ----------------------------------- |
-| Runtime          | Cloudflare Workers                  |
-| Framework        | Hono                                |
-| Language         | TypeScript                          |
-| Database         | Cloudflare D1 (SQLite)              |
-| ORM              | Prisma                              |
-| Validation       | Zod                                 |
-| Authentication   | JWT                                 |
-| Testing          | Vitest + Hono testing utilities     |
-| Code quality     | ESLint + Prettier                   |
-| Containerization | Docker (image hosted on Docker Hub) |
+| Component        | Technology                                 |
+| ---------------- | ------------------------------------------ |
+| Runtime          | Cloudflare Workers                         |
+| Framework        | Hono                                       |
+| Language         | TypeScript                                 |
+| Database         | Cloudflare D1 (SQLite)                     |
+| ORM              | Prisma                                     |
+| Validation       | Zod                                        |
+| Authentication   | JWT                                        |
+| Testing          | Vitest + Hono testing utilities            |
+| Code quality     | ESLint + Prettier                          |
+| Containerization | Docker (isolated test and dev environment) |
 
 Some of these are not set up yet; the project is in its initial scaffolding stage.
 
@@ -138,6 +138,25 @@ The cart mutations return the whole updated cart, so the UI can render it withou
 
 4. Apply it with `pnpm db:migrate:local`. The pipeline applies the same files to Dev and Prod.
 
+## Docker
+
+The `Dockerfile` builds an isolated environment with Node.js, pnpm and the dependencies already installed. CI runs every check inside it, and you can use it to test or run the API without installing anything but Docker.
+
+```bash
+docker build -t quickdish-api .
+
+# Run the same checks as CI
+docker run --rm quickdish-api pnpm test
+docker run --rm quickdish-api pnpm lint
+
+# Serve the API on http://localhost:8787 (applies the migrations and loads the sample menu first)
+docker run --rm -p 8787:8787 quickdish-api
+```
+
+Without a `.dev.vars`, the container uses `.dev.vars.example` and its placeholder `JWT_SECRET`. To use your own, add `-v "$PWD/.dev.vars:/app/.dev.vars:ro"`. The local database is recreated on every run; add `-v quickdish-api-d1:/app/.wrangler` to keep it between runs.
+
+Rebuild the image after changing the code: it copies the source when it is built.
+
 ## Scripts
 
 | Command                 | Description                                                           |
@@ -146,6 +165,7 @@ The cart mutations return the whole updated cart, so the UI can render it withou
 | `pnpm build`            | Bundle the Worker into `dist/` without deploying                      |
 | `pnpm run deploy`       | Deploy the Worker to Cloudflare (requires `pnpm wrangler login`)      |
 | `pnpm cf-typegen`       | Regenerate binding types after changing `wrangler.jsonc`              |
+| `pnpm cf-typegen:check` | Check that `worker-configuration.d.ts` is up to date (used by CI)     |
 | `pnpm typecheck`        | Type-check the project with `tsc`                                     |
 | `pnpm lint`             | Lint with ESLint (`pnpm lint:fix` to auto-fix)                        |
 | `pnpm format`           | Format all files with Prettier (`pnpm format:check` to only check)    |
@@ -167,6 +187,15 @@ We use **GitHub Flow**:
 1. Create a short-lived branch from `main` named `<type>/<short-description>`, for example `feat/cart-items` or `fix/order-cancel-status`.
 2. Open a pull request to `main` and get it approved by a teammate.
 3. Merging to `main` runs the pipeline: tests → deploy to Dev → manual approval → deploy to Prod.
+
+### Pipeline
+
+`.github/workflows/pipeline.yml` runs on every pull request and every push to `main`. It builds the Docker image and, inside it:
+
+- **Test:** checks the generated types, type-checks, lints, checks formatting and runs the unit tests with coverage. The run summary shows the test results, and the `test-report` (JUnit) and `coverage-report` artifacts are attached to the run.
+- **Build:** bundles the Worker and attaches it as the `worker-bundle` artifact.
+
+Both jobs must pass before a pull request can be merged.
 
 ### Commit messages
 
