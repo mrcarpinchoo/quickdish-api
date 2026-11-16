@@ -37,15 +37,15 @@
             "vars": {
                 "ENVIRONMENT": "dev",
                 "VERSION": "unknown",
-                // TODO(#14): add the Pages URL of the dev frontend.
-                "CORS_ORIGINS": "http://localhost:5173"
+                // Dev Pages site, plus the local Vite server for testing against Dev.
+                "CORS_ORIGINS": "https://quickdish-frontend-dev.pages.dev,http://localhost:5173"
             },
             "d1_databases": [
                 {
                     "binding": "DB",
                     "database_name": "quickdish-dev",
-                    // TODO(#14): replace with the database_id created by Terraform.
-                    "database_id": "00000000-0000-0000-0000-000000000001",
+                    // Created by Terraform in quickdish-infra (environments/dev output d1_database_id).
+                    "database_id": "aa32855c-17e0-4d86-b6fe-0111f2cb4f84",
                     "migrations_dir": "migrations"
                 }
             ]
@@ -54,15 +54,15 @@
             "vars": {
                 "ENVIRONMENT": "prod",
                 "VERSION": "unknown",
-                // TODO(#14): set to the Pages URL of the prod frontend.
-                "CORS_ORIGINS": ""
+                // Prod Pages site only.
+                "CORS_ORIGINS": "https://quickdish-frontend-prod.pages.dev"
             },
             "d1_databases": [
                 {
                     "binding": "DB",
                     "database_name": "quickdish-prod",
-                    // TODO(#14): replace with the database_id created by Terraform.
-                    "database_id": "00000000-0000-0000-0000-000000000002",
+                    // Created by Terraform in quickdish-infra (environments/prod output d1_database_id).
+                    "database_id": "ceeab568-173c-44da-ba9d-196a1c584042",
                     "migrations_dir": "migrations"
                 }
             ]
