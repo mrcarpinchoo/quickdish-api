@@ -18,6 +18,8 @@ concurrency:
 
 env:
   IMAGE: quickdish-api:ci
+  # Don't attach docker/build-push-action's build records as artifacts.
+  DOCKER_BUILD_RECORD_UPLOAD: false
 
 # Every check runs inside the Docker image (see Dockerfile), the same isolated
 # environment the team uses locally.
