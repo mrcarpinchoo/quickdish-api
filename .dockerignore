@@ -1,0 +1,21 @@
+# Generated or installed inside the image
+node_modules
+src/generated
+
+# Build and test output
+dist
+coverage
+reports
+
+# Local state and secrets
+.wrangler
+.env*
+.dev.vars*
+!.dev.vars.example
+
+# Not needed to test or run the API
+.git
+.github
+.agents
+.claude
+.vscode
