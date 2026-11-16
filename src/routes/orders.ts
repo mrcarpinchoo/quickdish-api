@@ -1,19 +1,36 @@
 import { Hono } from "hono";
 import { createPrisma } from "../lib/db";
 import { validate } from "../lib/validation";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, requireRole } from "../middleware/auth";
+import {
+  listOrdersQuery,
+  updateOrderStatusSchema
+} from "../schemas/admin-orders";
 import { createOrderSchema } from "../schemas/cart";
 import {
   cancelOrder,
   createOrder,
   getOrder,
-  listMyOrders
+  listAllOrders,
+  listMyOrders,
+  updateOrderStatus
 } from "../services/orders";
 import type { AppEnv } from "../types";
 
 const orders = new Hono<AppEnv>();
 
 orders.use("*", requireAuth);
+
+/** GET /orders?status= → every order, for the admin panel (admin). */
+orders.get(
+  "/",
+  requireRole("ADMIN"),
+  validate("query", listOrdersQuery),
+  async c =>
+    c.json(
+      await listAllOrders(createPrisma(c.env.DB), c.req.valid("query").status)
+    )
+);
 
 /** POST /orders with `{ notes? }` turns the cart into an order → 201. */
 orders.post("/", validate("json", createOrderSchema), async c => {
@@ -42,6 +59,21 @@ orders.post("/:id/cancel", async c =>
   c.json(
     await cancelOrder(createPrisma(c.env.DB), c.var.user.id, c.req.param("id"))
   )
+);
+
+/** PATCH /orders/:id/status with `{ status }`: one step forward (admin). */
+orders.patch(
+  "/:id/status",
+  requireRole("ADMIN"),
+  validate("json", updateOrderStatusSchema),
+  async c =>
+    c.json(
+      await updateOrderStatus(
+        createPrisma(c.env.DB),
+        c.req.param("id"),
+        c.req.valid("json")
+      )
+    )
 );
 
 export default orders;
