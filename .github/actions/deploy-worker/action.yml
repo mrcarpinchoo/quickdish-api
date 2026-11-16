@@ -1,0 +1,103 @@
+name: Deploy Worker
+description: Applies the D1 migrations, deploys the API Worker to one environment and smoke-tests /health. Runs inside the API's Docker image.
+
+inputs:
+  image:
+    description: Docker image to run wrangler in.
+    required: true
+  environment:
+    description: Wrangler environment from wrangler.jsonc (dev or prod).
+    required: true
+  seed:
+    description: Load seed/seed.sql (sample menu and test users). Never for prod.
+    default: "false"
+  cloudflare-api-token:
+    description: Cloudflare API token.
+    required: true
+  cloudflare-account-id:
+    description: Cloudflare account id.
+    required: true
+  jwt-secret:
+    description: JWT_SECRET for the Worker, uploaded with the new version.
+    required: true
+
+outputs:
+  url:
+    description: Public URL of the deployed Worker.
+    value: ${{ steps.deploy.outputs.url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Apply D1 migrations
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        WRANGLER_ENV: ${{ inputs.environment }}
+        CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
+      run: >
+        docker run --rm -e CLOUDFLARE_API_TOKEN -e CLOUDFLARE_ACCOUNT_ID
+        "$IMAGE" pnpm wrangler d1 migrations apply DB --env "$WRANGLER_ENV" --remote
+
+    - name: Load sample data
+      if: inputs.seed == 'true'
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        WRANGLER_ENV: ${{ inputs.environment }}
+        CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
+      run: >
+        docker run --rm -e CLOUDFLARE_API_TOKEN -e CLOUDFLARE_ACCOUNT_ID
+        "$IMAGE" pnpm wrangler d1 execute DB --env "$WRANGLER_ENV" --remote
+        --file seed/seed.sql --yes
+
+    # JWT_SECRET ships with the new version through --secrets-file.
+    - name: Deploy Worker
+      id: deploy
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        WRANGLER_ENV: ${{ inputs.environment }}
+        CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
+        JWT_SECRET: ${{ inputs.jwt-secret }}
+      run: |
+        if [ -z "$JWT_SECRET" ]; then
+          echo "::error::JWT_SECRET is empty. Set it in this GitHub environment's secrets."
+          exit 1
+        fi
+        docker run --rm -e CLOUDFLARE_API_TOKEN -e CLOUDFLARE_ACCOUNT_ID \
+          -e JWT_SECRET -e WRANGLER_ENV -e VERSION="$GITHUB_SHA" \
+          "$IMAGE" sh -c '
+            printf "JWT_SECRET=%s\n" "$JWT_SECRET" > /tmp/secrets.env
+            pnpm wrangler deploy --env "$WRANGLER_ENV" --minify \
+              --var "VERSION:$VERSION" --secrets-file /tmp/secrets.env
+          ' | tee deploy.log
+        url=$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' deploy.log | head -n 1)
+        if [ -z "$url" ]; then
+          echo "::error::Couldn't find the Worker URL in the deploy output"
+          exit 1
+        fi
+        echo "url=$url" >> "$GITHUB_OUTPUT"
+
+    - name: Smoke test
+      shell: bash
+      env:
+        URL: ${{ steps.deploy.outputs.url }}
+        WRANGLER_ENV: ${{ inputs.environment }}
+      run: |
+        for attempt in $(seq 1 12); do
+          if body=$(curl -fsS "$URL/health") && jq -e \
+            --arg env "$WRANGLER_ENV" --arg version "$GITHUB_SHA" \
+            '.status == "ok" and .db == "ok" and .env == $env and .version == $version' \
+            <<< "$body" > /dev/null; then
+            echo "Healthy: $body"
+            exit 0
+          fi
+          echo "Attempt $attempt: not ready yet (${body:-no response})"
+          sleep 5
+        done
+        echo "::error::$URL/health didn't report the new version"
+        exit 1

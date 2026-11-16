@@ -1,0 +1,22 @@
+name: Build image
+description: Builds the API's Docker image, reusing the GitHub Actions build cache, and loads it into Docker.
+
+inputs:
+  tag:
+    description: Tag for the built image.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        load: true
+        tags: ${{ inputs.tag }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max

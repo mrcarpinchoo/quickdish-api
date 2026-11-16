@@ -197,6 +197,13 @@ We use **GitHub Flow**:
 
 Both jobs must pass before a pull request can be merged.
 
+On a push to `main` (a merged pull request), two more jobs deploy the same image's code:
+
+- **Deploy to Development:** applies the D1 migrations to `quickdish-dev`, loads the sample menu and test users (`seed/seed.sql`), deploys the `quickdish-api-dev` Worker and checks that `/health` reports the new commit.
+- **Deploy to Production:** waits until a reviewer approves the `Production` environment, then does the same for `quickdish-prod` and `quickdish-api-prod`, **without** the sample data.
+
+Each deploy job links to its Worker URL on the run page. `JWT_SECRET` comes from each GitHub environment's secrets and is uploaded with the new version.
+
 ### Commit messages
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/):
