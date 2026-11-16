@@ -1,9 +1,15 @@
-import type { Order, OrderItem, Product } from "../generated/prisma/client";
+import type {
+  Order,
+  OrderItem,
+  OrderStatus,
+  Product
+} from "../generated/prisma/client";
 import type { AuthUser } from "../lib/jwt";
 import type { Prisma } from "../lib/db";
 import { ApiError } from "../lib/errors";
 import { saveOrder, type OrderPlan } from "../lib/order-batch";
 import type { CreateOrderInput } from "../schemas/cart";
+import type { UpdateOrderStatusInput } from "../schemas/admin-orders";
 import { isOrderable, ITEMS_WITH_PRODUCT } from "./cart";
 
 type OrderWithItems = Order & {
@@ -169,4 +175,101 @@ export async function cancelOrder(
   if (count === 0) throw notCancellable();
 
   return getOrder(prisma, { id: userId, role: "CUSTOMER" }, id);
+}
+
+// ---------- Admin ----------
+
+const ADMIN_INCLUDE = {
+  items: { include: { product: true } },
+  user: { select: { id: true, name: true, email: true } }
+} as const;
+
+type AdminOrderWithRelations = OrderWithItems & {
+  user: { id: string; name: string; email: string };
+};
+
+/** Order for the admin panel: the customer is included so staff know who it is for. */
+export function toAdminOrderView(order: AdminOrderWithRelations) {
+  return {
+    ...toOrderView(order),
+    customer: {
+      id: order.user.id,
+      name: order.user.name,
+      email: order.user.email
+    }
+  };
+}
+
+/** Every order, newest first; `status` narrows the list. */
+export async function listAllOrders(prisma: Prisma, status?: OrderStatus) {
+  const orders = await prisma.order.findMany({
+    where: status ? { status } : {},
+    orderBy: { createdAt: "desc" },
+    include: ADMIN_INCLUDE
+  });
+  return orders.map(toAdminOrderView);
+}
+
+/**
+ * The one forward step each status can take. CANCELLED and DELIVERED are
+ * final: no entry means no transition.
+ */
+const NEXT_STATUS: Partial<Record<OrderStatus, OrderStatus>> = {
+  PENDING: "IN_PREPARATION",
+  IN_PREPARATION: "READY",
+  READY: "DELIVERED"
+};
+
+async function loadAdminOrder(prisma: Prisma, id: string) {
+  const order = await prisma.order.findUnique({
+    where: { id },
+    include: ADMIN_INCLUDE
+  });
+  if (!order) throw orderNotFound();
+  return toAdminOrderView(order);
+}
+
+/**
+ * Moves an order one step forward. Any other move → 400. The status is
+ * checked again inside the update, so two admins can't both move the same
+ * order: the second one gets 409 and reloads.
+ */
+export async function updateOrderStatus(
+  prisma: Prisma,
+  id: string,
+  input: UpdateOrderStatusInput
+) {
+  const current = await prisma.order.findUnique({ where: { id } });
+  if (!current) throw orderNotFound();
+
+  if (NEXT_STATUS[current.status] !== input.status) {
+    throw new ApiError(
+      400,
+      "INVALID_STATUS_TRANSITION",
+      `An order cannot go from ${current.status} to ${input.status}`
+    );
+  }
+
+  const { count } = await prisma.order.updateMany({
+    where: { id, status: current.status },
+    data: { status: input.status }
+  });
+  if (count === 0) {
+    throw new ApiError(
+      409,
+      "ORDER_STATUS_CHANGED",
+      "The order changed while you were updating it; reload and try again"
+    );
+  }
+
+  // TODO(#2): send `order_status_changed` to Sentry.
+  console.log(
+    JSON.stringify({
+      event: "order_status_changed",
+      orderId: id,
+      from: current.status,
+      to: input.status
+    })
+  );
+  return loadAdminOrder(prisma, id);
 }

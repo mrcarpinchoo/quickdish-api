@@ -384,8 +384,14 @@ class FakePrisma {
   }
 
   private hydrateOrder(order: Order) {
+    const owner = this.users.find(u => u.id === order.userId);
     return {
       ...order,
+      user: owner && {
+        id: owner.id,
+        name: owner.name,
+        email: owner.email
+      },
       items: this.orderItems
         .filter(i => i.orderId === order.id)
         .map(i => {
@@ -397,10 +403,18 @@ class FakePrisma {
   }
 
   order = {
-    findMany: ({ where }: { where: { userId: string } }) =>
+    findMany: ({
+      where
+    }: {
+      where: { userId?: string; status?: Order["status"] };
+    }) =>
       Promise.resolve(
         this.orders
-          .filter(o => o.userId === where.userId)
+          .filter(
+            o =>
+              (where.userId === undefined || o.userId === where.userId) &&
+              (where.status === undefined || o.status === where.status)
+          )
           .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
           .map(o => this.hydrateOrder(o))
       ),
