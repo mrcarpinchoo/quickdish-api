@@ -25,7 +25,7 @@ pnpm install
 pnpm dev            # local server via wrangler dev (http://localhost:8787)
 pnpm build          # bundle into dist/ without deploying (wrangler deploy --dry-run)
 pnpm run deploy     # wrangler deploy --minify  (NOT `pnpm deploy`, a different built-in pnpm command)
-pnpm cf-typegen     # regenerate worker-configuration.d.ts from wrangler.jsonc
+pnpm cf-typegen     # regenerate worker-configuration.d.ts from wrangler.jsonc (cf-typegen:check to only check)
 pnpm typecheck      # tsc (noEmit)
 pnpm lint           # ESLint with type-aware typescript-eslint rules; lint:fix to auto-fix
 pnpm format         # Prettier write; format:check to only check
@@ -37,6 +37,8 @@ pnpm test -t "returns an ok status" # run tests whose name matches
 ```
 
 Before considering a change done, run `pnpm typecheck`, `pnpm lint`, `pnpm format:check` and `pnpm test`.
+
+CI (`.github/workflows/pipeline.yml`) runs `cf-typegen:check`, `typecheck`, `lint`, `format:check`, `test:ci` and `build` inside the Docker image on every PR and push to `main`. The `Test` and `Build` jobs are required checks. The `Dockerfile` (Node 24 on Debian slim, root user) is a test and local-dev environment, never deployed: CI copies results out with `docker cp` (bind-mounting `coverage/` fails because Vitest deletes that folder), and its default command, `scripts/docker-dev.sh`, migrates and seeds local D1, then runs `wrangler dev` on `0.0.0.0:8787`. A Docker Hub image is not required for the course.
 
 Tests live in `test/` (`*.test.ts`) and run in Node, not the Workers runtime. Test routes with `app.request()`; mock Prisma instead of hitting D1.
 
@@ -55,10 +57,10 @@ Code style comes from `.prettierrc`: double quotes, no trailing commas, `arrowPa
 - Auth: protect routes with `requireAuth` (401, sets `c.var.user = { id, role }`) and then `requireRole("ADMIN")` (403) from `src/middleware/auth.ts`. Passwords are hashed with PBKDF2 in `src/lib/password.ts`; never store or log them in plain text. API responses expose users through `toPublicUser()`, which drops `passwordHash`. `JWT_SECRET` is a secret: `.dev.vars` locally, `wrangler secret put` in Dev and Prod.
 - Map Prisma errors with `isPrismaError(err, UNIQUE_VIOLATION | FOREIGN_KEY_VIOLATION)` from `src/lib/prisma-errors.ts`. It is kept out of `db.ts` so tests can mock `createPrisma` without loading the generated client.
 - Writes that must be atomic go through a D1 batch (`env.DB.batch()`), not Prisma: Prisma has no interactive transactions on D1. `saveOrder()` in `src/lib/order-batch.ts` creates an order this way; route tests mock it and `test/order-batch.test.ts` checks the statements.
-- Bindings (D1, secrets, vars) are declared in `wrangler.jsonc` and typed through the global `CloudflareBindings` interface in `worker-configuration.d.ts`, which is generated. Use `new Hono<{ Bindings: CloudflareBindings }>()` and access bindings via `c.env`. After any change to `wrangler.jsonc`, rerun `pnpm cf-typegen` and commit the regenerated file. Never edit it by hand.
+- Bindings (D1, secrets, vars) are declared in `wrangler.jsonc` and typed through the global `CloudflareBindings` interface in `worker-configuration.d.ts`, which is generated. Use `new Hono<{ Bindings: CloudflareBindings }>()` and access bindings via `c.env`. After any change to `wrangler.jsonc`, rerun `pnpm cf-typegen` and commit the regenerated file. Never edit it by hand. The script reads secret names from `.dev.vars.example`, so every machine (and CI) generates the same file; add new secrets there.
 - The code runs in the Workers runtime, not Node.js. Node-only libraries (native addons such as `bcrypt`, `fs`-dependent packages) won't work. Prefer Web Standard APIs (`crypto.subtle`, `fetch`, `Request`/`Response`), and keep per-request CPU low: the free plan has tight CPU-time limits.
 - `observability.enabled` in `wrangler.jsonc` turns on Workers logs and traces. Keep it enabled.
-- Stack: D1 (SQLite) through Prisma ORM, Zod for validation (via `@hono/zod-validator`), and JWT for authentication (Hono's built-in `hono/jwt`). The Prisma models live in `prisma/schema.prisma`; the client is generated into `src/generated/prisma` (git-ignored, regenerated on `pnpm install` or `pnpm db:generate`) and uses the D1 driver adapter. Ids are UUID strings and money is integer cents (`priceCents`, `totalCents`, `unitPriceCents`). Schema changes are applied as SQL migrations in `migrations/` with `wrangler d1 migrations apply`, not with `prisma migrate deploy`. The Docker image published to Docker Hub is not set up yet.
+- Stack: D1 (SQLite) through Prisma ORM, Zod for validation (via `@hono/zod-validator`), and JWT for authentication (Hono's built-in `hono/jwt`). The Prisma models live in `prisma/schema.prisma`; the client is generated into `src/generated/prisma` (git-ignored, regenerated on `pnpm install` or `pnpm db:generate`) and uses the D1 driver adapter. Ids are UUID strings and money is integer cents (`priceCents`, `totalCents`, `unitPriceCents`). Schema changes are applied as SQL migrations in `migrations/` with `wrangler d1 migrations apply`, not with `prisma migrate deploy`.
 - Planned environments: separate Dev and Prod Workers, each bound to its own D1 database. Terraform in `quickdish-infra` creates those databases.
 
 ## Domain model (starting point)
