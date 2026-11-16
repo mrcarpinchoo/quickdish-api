@@ -11,18 +11,24 @@ on:
 permissions:
   contents: read
 
-# A new push to a PR cancels its previous run; runs on main always finish.
+# A new push to a PR cancels its previous run. Runs on main never cancel each
+# other: each one gets its own group, and the deploy jobs queue per environment.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: true
+
+# Bash with pipefail, so `wrangler ... | tee` fails the step when wrangler fails.
+defaults:
+  run:
+    shell: bash
 
 env:
   IMAGE: quickdish-api:ci
   # Don't attach docker/build-push-action's build records as artifacts.
   DOCKER_BUILD_RECORD_UPLOAD: false
 
-# Every check runs inside the Docker image (see Dockerfile), the same isolated
-# environment the team uses locally.
+# Every job runs inside the Docker image (see Dockerfile), the same isolated
+# environment the team uses locally. Shared steps live in .github/actions/.
 jobs:
   test:
     name: Test
@@ -31,17 +37,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Build image
-        uses: docker/build-push-action@v6
+        uses: ./.github/actions/build-image
         with:
-          context: .
-          load: true
-          tags: ${{ env.IMAGE }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tag: ${{ env.IMAGE }}
 
       - name: Check generated types
         run: docker run --rm "$IMAGE" pnpm cf-typegen:check
@@ -93,17 +92,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Build image
-        uses: docker/build-push-action@v6
+        uses: ./.github/actions/build-image
         with:
-          context: .
-          load: true
-          tags: ${{ env.IMAGE }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tag: ${{ env.IMAGE }}
 
       - name: Bundle the Worker
         run: |
@@ -115,3 +107,67 @@ jobs:
         with:
           name: worker-bundle
           path: dist
+
+  # Deploys only run on pushes to main: pull requests stop after Test and Build.
+  # The deploy-worker action applies the migrations, deploys and checks /health.
+  deploy-dev:
+    name: Deploy to Development
+    needs: [test, build]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment:
+      name: Development
+      url: ${{ steps.deploy.outputs.url }}
+    concurrency:
+      group: deploy-dev
+      cancel-in-progress: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build image
+        uses: ./.github/actions/build-image
+        with:
+          tag: ${{ env.IMAGE }}
+
+      - name: Deploy to Development
+        id: deploy
+        uses: ./.github/actions/deploy-worker
+        with:
+          image: ${{ env.IMAGE }}
+          environment: dev
+          # Sample menu and test users: Development only, never Production.
+          seed: "true"
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          jwt-secret: ${{ secrets.JWT_SECRET }}
+
+  # Waits for a reviewer to approve the Production environment.
+  deploy-prod:
+    name: Deploy to Production
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    environment:
+      name: Production
+      url: ${{ steps.deploy.outputs.url }}
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build image
+        uses: ./.github/actions/build-image
+        with:
+          tag: ${{ env.IMAGE }}
+
+      - name: Deploy to Production
+        id: deploy
+        uses: ./.github/actions/deploy-worker
+        with:
+          image: ${{ env.IMAGE }}
+          environment: prod
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          jwt-secret: ${{ secrets.JWT_SECRET }}
