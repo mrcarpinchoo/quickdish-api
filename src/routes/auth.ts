@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/hono/cloudflare";
 import { Hono } from "hono";
 import { createPrisma } from "../lib/db";
 import { ApiError } from "../lib/errors";
@@ -28,7 +29,8 @@ auth.post("/login", validate("json", loginSchema), async c => {
     return c.json({ token, user: toPublicUser(user) });
   } catch (err) {
     if (err instanceof ApiError && err.code === "INVALID_CREDENTIALS") {
-      // Never log the password. TODO(#2): also send it to Sentry as a warning.
+      // Never log the password or the email.
+      Sentry.logger.warn("login_failed");
       console.warn(JSON.stringify({ event: "login_failed" }));
     }
     throw err;

@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/hono/cloudflare";
 import type {
   Order,
   OrderItem,
@@ -107,14 +108,10 @@ export async function createOrder(
     );
   }
 
-  // TODO(#2): send `order_created` to Sentry with an `order.create` span.
-  console.log(
-    JSON.stringify({
-      event: "order_created",
-      orderId: plan.id,
-      totalCents: plan.totalCents
-    })
-  );
+  // Business event: a log in Sentry and a line in the Workers logs.
+  const created = { orderId: plan.id, totalCents: plan.totalCents };
+  Sentry.logger.info("order_created", created);
+  console.log(JSON.stringify({ event: "order_created", ...created }));
   return getOrder(prisma, { id: userId, role: "CUSTOMER" }, plan.id);
 }
 
@@ -262,14 +259,9 @@ export async function updateOrderStatus(
     );
   }
 
-  // TODO(#2): send `order_status_changed` to Sentry.
-  console.log(
-    JSON.stringify({
-      event: "order_status_changed",
-      orderId: id,
-      from: current.status,
-      to: input.status
-    })
-  );
+  // Business event: a log in Sentry and a line in the Workers logs.
+  const changed = { orderId: id, from: current.status, to: input.status };
+  Sentry.logger.info("order_status_changed", changed);
+  console.log(JSON.stringify({ event: "order_status_changed", ...changed }));
   return loadAdminOrder(prisma, id);
 }

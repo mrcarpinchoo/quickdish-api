@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/hono/cloudflare";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import app from "../src/index";
 import { verifyToken } from "../src/lib/jwt";
@@ -127,6 +128,7 @@ describe("POST /auth/login", () => {
     ["an unknown email", "nobody@quickdish.test", "Password123"]
   ])("returns the same generic 401 for %s", async (_, email, password) => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const sentryWarn = vi.spyOn(Sentry.logger, "warn");
 
     const res = await app.request(
       "/auth/login",
@@ -144,6 +146,10 @@ describe("POST /auth/login", () => {
     // The failed login is logged, without the password.
     expect(warn).toHaveBeenCalledOnce();
     expect(JSON.stringify(warn.mock.calls)).not.toContain(password);
+    // Sentry gets the same event, also without the password or the email.
+    expect(sentryWarn).toHaveBeenCalledWith("login_failed");
+    expect(JSON.stringify(sentryWarn.mock.calls)).not.toContain(password);
+    expect(JSON.stringify(sentryWarn.mock.calls)).not.toContain(email);
   });
 });
 
