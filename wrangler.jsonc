@@ -32,6 +32,13 @@
             "migrations_dir": "migrations"
         }
     ],
+    "r2_buckets": [
+        {
+            "binding": "PHOTOS",
+            // Local only: wrangler dev keeps this bucket in .wrangler/state.
+            "bucket_name": "quickdish-photos-local"
+        }
+    ],
     "env": {
         "dev": {
             "vars": {
@@ -47,6 +54,13 @@
                     // Created by Terraform in quickdish-infra (environments/dev output d1_database_id).
                     "database_id": "aa32855c-17e0-4d86-b6fe-0111f2cb4f84",
                     "migrations_dir": "migrations"
+                }
+            ],
+            "r2_buckets": [
+                {
+                    "binding": "PHOTOS",
+                    // Created in quickdish-infra (environments/dev).
+                    "bucket_name": "quickdish-photos-dev"
                 }
             ]
         },
@@ -64,6 +78,13 @@
                     // Created by Terraform in quickdish-infra (environments/prod output d1_database_id).
                     "database_id": "ceeab568-173c-44da-ba9d-196a1c584042",
                     "migrations_dir": "migrations"
+                }
+            ],
+            "r2_buckets": [
+                {
+                    "binding": "PHOTOS",
+                    // Created in quickdish-infra (environments/prod).
+                    "bucket_name": "quickdish-photos-prod"
                 }
             ]
         }

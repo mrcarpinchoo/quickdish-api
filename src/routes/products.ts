@@ -1,5 +1,7 @@
 import { Hono } from "hono";
 import { createPrisma } from "../lib/db";
+import { ApiError } from "../lib/errors";
+import { MAX_PHOTO_BYTES, photoKey } from "../lib/photos";
 import { validate } from "../lib/validation";
 import { optionalAuth, requireAuth, requireRole } from "../middleware/auth";
 import {
@@ -16,6 +18,11 @@ import {
   setProductAvailability,
   updateProduct
 } from "../services/catalog";
+import {
+  getProductPhoto,
+  removeProductPhoto,
+  setProductPhoto
+} from "../services/photos";
 import type { AppEnv } from "../types";
 
 const products = new Hono<AppEnv>();
@@ -45,6 +52,58 @@ products.get("/:id", optionalAuth, async c => {
     createPrisma(c.env.DB),
     c.req.param("id"),
     c.var.viewer?.role === "ADMIN"
+  );
+  return c.json(product);
+});
+
+/**
+ * GET /products/:id/image → the photo itself (public). Hidden products → 404.
+ * The URL changes on each upload (`?v=`), so the browser may cache it for a year.
+ */
+products.get("/:id/image", optionalAuth, async c => {
+  const object = await getProductPhoto(
+    createPrisma(c.env.DB),
+    c.env.PHOTOS,
+    c.req.param("id"),
+    c.var.viewer?.role === "ADMIN"
+  );
+  return c.body(object.body, 200, {
+    "Content-Type":
+      object.httpMetadata?.contentType ?? "application/octet-stream",
+    "Cache-Control": "public, max-age=31536000, immutable",
+    ETag: object.httpEtag
+  });
+});
+
+/**
+ * PUT /products/:id/image: the photo as the raw request body, with its image
+ * Content-Type (admin). Replaces the earlier photo. Returns the product.
+ */
+products.put("/:id/image", ...adminOnly, async c => {
+  const declared = Number(c.req.header("content-length") ?? 0);
+  if (declared > MAX_PHOTO_BYTES) {
+    throw new ApiError(
+      413,
+      "PHOTO_TOO_LARGE",
+      "Photos must be 1 MB or smaller"
+    );
+  }
+  const bytes = new Uint8Array(await c.req.arrayBuffer());
+  const product = await setProductPhoto(
+    createPrisma(c.env.DB),
+    c.env.PHOTOS,
+    c.req.param("id"),
+    bytes
+  );
+  return c.json(product);
+});
+
+/** DELETE /products/:id/image removes the photo and clears `imageUrl` (admin). */
+products.delete("/:id/image", ...adminOnly, async c => {
+  const product = await removeProductPhoto(
+    createPrisma(c.env.DB),
+    c.env.PHOTOS,
+    c.req.param("id")
   );
   return c.json(product);
 });
@@ -90,7 +149,9 @@ products.patch(
 
 /** DELETE /products/:id → 204 (admin). In past orders → 409. */
 products.delete("/:id", ...adminOnly, async c => {
-  await deleteProduct(createPrisma(c.env.DB), c.req.param("id"));
+  const id = c.req.param("id");
+  await deleteProduct(createPrisma(c.env.DB), id);
+  await c.env.PHOTOS.delete(photoKey(id));
   return c.body(null, 204);
 });
 

@@ -1,4 +1,14 @@
 import { z } from "zod";
+import { isPhotoPath } from "../lib/photos";
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const { protocol } = new URL(value);
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
 
 const name = z.string().trim().min(1).max(100);
 const description = z.string().trim().max(500).nullable().optional();
@@ -25,9 +35,13 @@ export const productSchema = z.object({
   description,
   /** Price in cents: 3500 = $35.00. */
   priceCents: z.number().int().positive().max(10_000_000),
+  /** An http(s) link, or the photo path this API returns after an upload. */
   imageUrl: z
-    .url({ protocol: /^https?$/ })
+    .string()
     .max(2048)
+    .refine(value => isHttpUrl(value) || isPhotoPath(value), {
+      message: "imageUrl must be an http(s) URL or a product photo path"
+    })
     .nullable()
     .optional(),
   available: z.boolean().optional(),
