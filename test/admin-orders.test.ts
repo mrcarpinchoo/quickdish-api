@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/hono/cloudflare";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Category, Product, User } from "../src/generated/prisma/client";
 import app from "../src/index";
@@ -203,6 +204,7 @@ describe("PATCH /orders/:id/status", () => {
   });
 
   it("logs the previous and new status", async () => {
+    const info = vi.spyOn(Sentry.logger, "info");
     const order = orderIn("PENDING");
 
     await request(`/orders/${order.id}/status`, "PATCH", {
@@ -217,5 +219,10 @@ describe("PATCH /orders/:id/status", () => {
         to: "IN_PREPARATION"
       })
     );
+    expect(info).toHaveBeenCalledWith("order_status_changed", {
+      orderId: order.id,
+      from: "PENDING",
+      to: "IN_PREPARATION"
+    });
   });
 });

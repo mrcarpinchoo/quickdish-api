@@ -1,3 +1,5 @@
 # Local secrets for `pnpm dev`. Copy to .dev.vars (git-ignored).
-# In Dev and Prod the secret is set with `wrangler secret put JWT_SECRET --env dev|prod`.
+# In Dev and Prod the pipeline uploads them from the GitHub environment secrets.
+# Leave SENTRY_DSN empty locally to keep Sentry off.
 JWT_SECRET=change-me-to-a-long-random-string
+SENTRY_DSN=

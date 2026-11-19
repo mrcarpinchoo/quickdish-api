@@ -26,8 +26,7 @@ The API is built with [Hono](https://hono.dev/) and runs on [Cloudflare Workers]
 | Testing          | Vitest + Hono testing utilities            |
 | Code quality     | ESLint + Prettier                          |
 | Containerization | Docker (isolated test and dev environment) |
-
-Some of these are not set up yet; the project is in its initial scaffolding stage.
+| Monitoring (APM) | Sentry (`@sentry/hono`)                    |
 
 ## Getting started
 
@@ -157,6 +156,31 @@ Without a `.dev.vars`, the container uses `.dev.vars.example` and its placeholde
 
 Rebuild the image after changing the code: it copies the source when it is built.
 
+## Observability
+
+Sentry (organization `iteso-g5`, project `quickdish`) receives the API's errors, traces and logs. Each event carries the environment (`dev` or `prod`) and the release (the deployed commit SHA). Locally and in tests `SENTRY_DSN` is empty, so Sentry stays off.
+
+| What           | Where in Sentry | Source                                                                                                  |
+| -------------- | --------------- | ------------------------------------------------------------------------------------------------------- |
+| Errors         | Issues          | Unexpected errors and 5xx responses. 4xx answers (`ApiError`) are expected and not reported.            |
+| Traces         | Traces          | One per request, with a span for each middleware and D1 query.                                          |
+| Logs (message) | Logs            | `order_created`, `order_status_changed` (info) and `login_failed` (warning, without email or password). |
+
+To produce an error on demand, call `GET /debug/error` with an admin token. It answers the usual 500 and the error shows up in Sentry's Issues with a readable stack trace:
+
+```bash
+TOKEN=$(curl -s -H "Content-Type: application/json" \
+  -d '{"email":"admin@quickdish.test","password":"Admin12345"}' \
+  https://quickdish-api-dev.guillermo-romero.workers.dev/auth/login | jq -r .token)
+curl -H "Authorization: Bearer $TOKEN" https://quickdish-api-dev.guillermo-romero.workers.dev/debug/error
+```
+
+Metrics (requests and CPU time) are in Cloudflare: **Workers & Pages → quickdish-api-prod → Metrics**. To give the charts data before a demo, send some requests:
+
+```bash
+sh scripts/traffic.sh https://quickdish-api-prod.guillermo-romero.workers.dev 300
+```
+
 ## Scripts
 
 | Command                 | Description                                                           |
@@ -202,7 +226,7 @@ On a push to `main` (a merged pull request), two more jobs deploy the same image
 - **Deploy to Development:** applies the D1 migrations to `quickdish-dev`, loads the sample menu and test users (`seed/seed.sql`), deploys the `quickdish-api-dev` Worker and checks that `/health` reports the new commit.
 - **Deploy to Production:** waits until a reviewer approves the `Production` environment, then does the same for `quickdish-prod` and `quickdish-api-prod`, **without** the sample data.
 
-Each deploy job links to its Worker URL on the run page. `JWT_SECRET` comes from each GitHub environment's secrets and is uploaded with the new version.
+Each deploy job links to its Worker URL on the run page. `JWT_SECRET` and `SENTRY_DSN` come from each GitHub environment's secrets and are uploaded with the new version. Before deploying, the job uploads the Worker's source maps to Sentry (repository secret `SENTRY_AUTH_TOKEN`), so error stack traces point to the TypeScript source.
 
 ### Commit messages
 

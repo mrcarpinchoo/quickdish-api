@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/hono/cloudflare";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Category, Product, User } from "../src/generated/prisma/client";
 import app from "../src/index";
@@ -177,6 +178,7 @@ describe("POST /orders", () => {
   });
 
   it("logs order_created with the id and total", async () => {
+    const info = vi.spyOn(Sentry.logger, "info");
     await fillCart([[pastor, 1]]);
 
     const order = await (await placeOrder()).json<OrderView>();
@@ -188,6 +190,10 @@ describe("POST /orders", () => {
         totalCents: 3500
       })
     );
+    expect(info).toHaveBeenCalledWith("order_created", {
+      orderId: order.id,
+      totalCents: 3500
+    });
   });
 
   it("works without a body", async () => {
