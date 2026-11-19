@@ -141,6 +141,10 @@ jobs:
           cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           jwt-secret: ${{ secrets.JWT_SECRET }}
+          sentry-dsn: ${{ secrets.SENTRY_DSN }}
+          sentry-auth-token: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          sentry-org: iteso-g5
+          sentry-project: quickdish
 
   # Waits for a reviewer to approve the Production environment.
   deploy-prod:
@@ -171,3 +175,7 @@ jobs:
           cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           jwt-secret: ${{ secrets.JWT_SECRET }}
+          sentry-dsn: ${{ secrets.SENTRY_DSN }}
+          sentry-auth-token: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          sentry-org: iteso-g5
+          sentry-project: quickdish

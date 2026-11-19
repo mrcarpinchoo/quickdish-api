@@ -20,6 +20,18 @@ inputs:
   jwt-secret:
     description: JWT_SECRET for the Worker, uploaded with the new version.
     required: true
+  sentry-dsn:
+    description: SENTRY_DSN for the Worker, uploaded with the new version.
+    required: true
+  sentry-auth-token:
+    description: Sentry auth token, used to upload the source maps.
+    required: true
+  sentry-org:
+    description: Sentry organization slug.
+    required: true
+  sentry-project:
+    description: Sentry project slug.
+    required: true
 
 outputs:
   url:
@@ -53,7 +65,11 @@ runs:
         "$IMAGE" pnpm wrangler d1 execute DB --env "$WRANGLER_ENV" --remote
         --file seed/seed.sql --yes
 
-    # JWT_SECRET ships with the new version through --secrets-file.
+    # 1. Bundle the Worker with its source map.
+    # 2. Stamp both with the same debug ID, so Sentry can match stack traces.
+    # 3. Upload the source maps to Sentry (release = commit SHA).
+    # 4. Deploy that exact stamped bundle (--no-bundle). The secrets ship with
+    #    the new version through --secrets-file.
     - name: Deploy Worker
       id: deploy
       shell: bash
@@ -63,16 +79,28 @@ runs:
         CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
         CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
         JWT_SECRET: ${{ inputs.jwt-secret }}
+        SENTRY_DSN: ${{ inputs.sentry-dsn }}
+        SENTRY_AUTH_TOKEN: ${{ inputs.sentry-auth-token }}
+        SENTRY_ORG: ${{ inputs.sentry-org }}
+        SENTRY_PROJECT: ${{ inputs.sentry-project }}
       run: |
-        if [ -z "$JWT_SECRET" ]; then
-          echo "::error::JWT_SECRET is empty. Set it in this GitHub environment's secrets."
-          exit 1
-        fi
+        for name in JWT_SECRET SENTRY_DSN SENTRY_AUTH_TOKEN; do
+          if [ -z "${!name}" ]; then
+            echo "::error::$name is empty. Set it in the repository or this GitHub environment's secrets."
+            exit 1
+          fi
+        done
         docker run --rm -e CLOUDFLARE_API_TOKEN -e CLOUDFLARE_ACCOUNT_ID \
-          -e JWT_SECRET -e WRANGLER_ENV -e VERSION="$GITHUB_SHA" \
+          -e JWT_SECRET -e SENTRY_DSN -e SENTRY_AUTH_TOKEN -e SENTRY_ORG \
+          -e SENTRY_PROJECT -e WRANGLER_ENV -e VERSION="$GITHUB_SHA" \
           "$IMAGE" sh -c '
-            printf "JWT_SECRET=%s\n" "$JWT_SECRET" > /tmp/secrets.env
-            pnpm wrangler deploy --env "$WRANGLER_ENV" --minify \
+            set -e
+            printf "JWT_SECRET=%s\nSENTRY_DSN=%s\n" "$JWT_SECRET" "$SENTRY_DSN" > /tmp/secrets.env
+            pnpm wrangler deploy --env "$WRANGLER_ENV" --minify --dry-run --outdir dist
+            npx --yes @sentry/cli@3.8.2 sourcemaps inject dist
+            npx --yes @sentry/cli@3.8.2 sourcemaps upload --release "$VERSION" dist
+            pnpm wrangler deploy dist/index.js --config wrangler.jsonc \
+              --env "$WRANGLER_ENV" --no-bundle \
               --var "VERSION:$VERSION" --secrets-file /tmp/secrets.env
           ' | tee deploy.log
         url=$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' deploy.log | head -n 1)
